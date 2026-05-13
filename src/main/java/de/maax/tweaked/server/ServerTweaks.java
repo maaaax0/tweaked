@@ -11,6 +11,8 @@ public final class ServerTweaks {
     }
 
     public static void register() {
+        AdminCommands.register();
+        MobGriefingRules.register();
         NeoForge.EVENT_BUS.addListener(ServerTweaks::onServerStarted);
     }
 

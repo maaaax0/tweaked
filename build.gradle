@@ -31,6 +31,18 @@ runs {
 
     client {
         systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+
+        def tweakedUsername = providers.gradleProperty('tweakedUsername').orNull
+        if (tweakedUsername != null) {
+            argument '--username'
+            argument tweakedUsername
+        }
+
+        def tweakedQuickJoin = providers.gradleProperty('tweakedQuickJoin').orNull
+        if (tweakedQuickJoin != null) {
+            argument '--quickPlayMultiplayer'
+            argument tweakedQuickJoin
+        }
     }
 
     server {

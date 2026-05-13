@@ -1,8 +1,11 @@
 package de.maax.tweaked;
 
 import com.mojang.logging.LogUtils;
+import de.maax.tweaked.menu.TweakedMenus;
 import de.maax.tweaked.server.ServerTweaks;
+import de.maax.tweaked.world.TweakedGameRules;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.loading.FMLLoader;
 import net.neoforged.fml.common.Mod;
 import org.slf4j.Logger;
 
@@ -12,7 +15,24 @@ public class Tweaked {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public Tweaked(IEventBus modEventBus) {
+        TweakedMenus.register(modEventBus);
+        registerClientMenus(modEventBus);
+        TweakedGameRules.register();
         ServerTweaks.register();
         LOGGER.info("Loaded {}", MOD_ID);
+    }
+
+    private static void registerClientMenus(IEventBus modEventBus) {
+        if (!FMLLoader.getDist().isClient()) {
+            return;
+        }
+
+        try {
+            Class.forName("de.maax.tweaked.client.TweakedClientMenus")
+                    .getMethod("register", IEventBus.class)
+                    .invoke(null, modEventBus);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to register client menus", exception);
+        }
     }
 }

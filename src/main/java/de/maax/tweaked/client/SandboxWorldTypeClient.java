@@ -4,6 +4,7 @@ import de.maax.tweaked.world.SandboxPresets;
 import de.maax.tweaked.world.SandboxPresets.Preset;
 import de.maax.tweaked.world.SpawnOptions;
 import de.maax.tweaked.world.SpawnOptions.BiomeCategory;
+import de.maax.tweaked.world.TweakedGameRules;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 import net.minecraft.core.Holder;
@@ -125,6 +126,7 @@ public final class SandboxWorldTypeClient {
         gameRules.getRule(GameRules.RULE_DO_WARDEN_SPAWNING).set(false, null);
         gameRules.getRule(GameRules.RULE_DISABLE_RAIDS).set(true, null);
         gameRules.getRule(GameRules.RULE_MOBGRIEFING).set(true, null);
+        TweakedGameRules.ALL.forEach(rule -> gameRules.getRule(rule).set(true, null));
         return gameRules;
     }
 
