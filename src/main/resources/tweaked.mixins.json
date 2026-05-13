@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "package": "de.maax.tweaked.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "CreateWorldScreenAccessor",
+    "CreateWorldScreenMixin",
+    "CreateWorldScreenWorldTabMixin",
+    "WorldCreationUiStateMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "modmenu.nameTranslation.tweaked": "Tweaked",
+  "generator.tweaked.sandbox": "Sandbox",
+  "generator.tweaked.sandbox.normal": "Normal",
+  "generator.tweaked.sandbox.redstone": "Redstone",
+  "generator.tweaked.sandbox.building": "Building",
+  "generator.tweaked.sandbox.clean": "Clean",
+  "selectWorld.tweaked.villageSpawn": "Village Spawn",
+  "selectWorld.tweaked.biomeSpawn": "Biome",
+  "selectWorld.tweaked.biome.plains": "Plains",
+  "selectWorld.tweaked.biome.forest": "Forest",
+  "selectWorld.tweaked.biome.jungle": "Jungle",
+  "selectWorld.tweaked.biome.swamp": "Swamp",
+  "selectWorld.tweaked.biome.desert": "Desert",
+  "selectWorld.tweaked.biome.mushroom": "Mushroom",
+  "selectWorld.tweaked.biome.cherry": "Cherry",
+  "selectWorld.tweaked.biome.taiga": "Taiga",
+  "selectWorld.tweaked.biome.savanna": "Savanna",
+  "selectWorld.tweaked.biome.beach": "Beach",
+  "selectWorld.tweaked.biome.badlands": "Badlands"
+}
