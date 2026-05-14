@@ -2,6 +2,7 @@ package de.maax.tweaked;
 
 import com.mojang.logging.LogUtils;
 import de.maax.tweaked.menu.TweakedMenus;
+import de.maax.tweaked.network.GameRuleSync;
 import de.maax.tweaked.server.ServerTweaks;
 import de.maax.tweaked.world.TweakedGameRules;
 import net.neoforged.bus.api.IEventBus;
@@ -16,6 +17,7 @@ public class Tweaked {
 
     public Tweaked(IEventBus modEventBus) {
         TweakedMenus.register(modEventBus);
+        GameRuleSync.register(modEventBus);
         registerClientMenus(modEventBus);
         TweakedGameRules.register();
         ServerTweaks.register();

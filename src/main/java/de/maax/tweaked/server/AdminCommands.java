@@ -3,18 +3,29 @@ package de.maax.tweaked.server;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
+import com.mojang.brigadier.tree.CommandNode;
 import com.mojang.authlib.GameProfile;
 import com.mojang.logging.LogUtils;
 import de.maax.tweaked.menu.InvSeeMenu;
+import net.minecraft.advancements.AdvancementHolder;
+import net.minecraft.advancements.AdvancementProgress;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.NonNullList;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.GameProfileArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.MenuProvider;
 import net.minecraft.world.SimpleMenuProvider;
@@ -27,6 +38,15 @@ import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.world.level.border.WorldBorder;
+import net.minecraft.world.level.dimension.DimensionType;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.levelgen.feature.EndPlatformFeature;
+import net.minecraft.world.level.portal.DimensionTransition;
+import net.minecraft.world.level.portal.PortalShape;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
@@ -35,6 +55,8 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import org.slf4j.Logger;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.HashSet;
@@ -45,6 +67,7 @@ public final class AdminCommands {
     static final Logger LOGGER = LogUtils.getLogger();
     private static final SimpleCommandExceptionType ERROR_SINGLE_PLAYER = new SimpleCommandExceptionType(Component.literal("Expected a single player"));
     private static final SimpleCommandExceptionType ERROR_NO_STORED_PLAYER_DATA = new SimpleCommandExceptionType(Component.literal("No stored player data found"));
+    private static final SimpleCommandExceptionType ERROR_DIMENSION_NOT_FOUND = new SimpleCommandExceptionType(Component.literal("Target dimension is not loaded"));
     private static final Set<UUID> FLYING_PLAYERS = new HashSet<>();
     private static final Set<UUID> GOD_PLAYERS = new HashSet<>();
 
@@ -56,6 +79,7 @@ public final class AdminCommands {
         NeoForge.EVENT_BUS.addListener(AdminCommands::onIncomingDamage);
         NeoForge.EVENT_BUS.addListener(AdminCommands::onPlayerTick);
         NeoForge.EVENT_BUS.addListener(AdminCommands::onPlayerLoggedIn);
+        NeoForge.EVENT_BUS.addListener(AdminCommands::onPlayerLoggedOut);
         NeoForge.EVENT_BUS.addListener(AdminCommands::onPlayerRespawn);
         NeoForge.EVENT_BUS.addListener(AdminCommands::onPlayerChangedGameMode);
     }
@@ -102,6 +126,65 @@ public final class AdminCommands {
                 .executes(context -> openEnderChest(context, context.getSource().getPlayerOrException()))
                 .then(Commands.argument("target", GameProfileArgument.gameProfile())
                         .executes(context -> openEnderChest(context, singleProfile(context, "target")))));
+
+        dispatcher.register(Commands.literal("tweaked")
+                .requires(source -> source.hasPermission(2))
+                .then(Commands.literal("reset")
+                        .then(Commands.argument("target", GameProfileArgument.gameProfile())
+                                .executes(context -> resetPlayer(context, singleProfile(context, "target"))))));
+
+        registerDimensionTeleportShortcuts(dispatcher);
+    }
+
+    private static void registerDimensionTeleportShortcuts(CommandDispatcher<CommandSourceStack> dispatcher) {
+        CommandNode<CommandSourceStack> tp = dispatcher.getRoot().getChild("tp");
+        if (tp == null) {
+            dispatcher.register(Commands.literal("tp").requires(source -> source.hasPermission(2)));
+            tp = dispatcher.getRoot().getChild("tp");
+        }
+
+        addDimensionTeleportShortcuts(tp);
+
+        CommandNode<CommandSourceStack> teleport = dispatcher.getRoot().getChild("teleport");
+        if (teleport != null && teleport != tp) {
+            addDimensionTeleportShortcuts(teleport);
+        }
+    }
+
+    private static void addDimensionTeleportShortcuts(CommandNode<CommandSourceStack> command) {
+        command.addChild(Commands.literal("end")
+                .requires(source -> source.hasPermission(2))
+                .executes(AdminCommands::teleportToEnd)
+                .build());
+        command.addChild(Commands.literal("nether")
+                .requires(source -> source.hasPermission(2))
+                .executes(AdminCommands::teleportToNether)
+                .build());
+        command.addChild(Commands.literal("overworld")
+                .requires(source -> source.hasPermission(2))
+                .executes(AdminCommands::teleportToOverworld)
+                .build());
+
+        CommandNode<CommandSourceStack> targets = command.getChild("targets");
+        if (targets == null) {
+            command.addChild(Commands.argument("targets", EntityArgument.players())
+                    .requires(source -> source.hasPermission(2))
+                    .build());
+            targets = command.getChild("targets");
+        }
+
+        targets.addChild(Commands.literal("end")
+                .requires(source -> source.hasPermission(2))
+                .executes(context -> teleportToEnd(context, EntityArgument.getPlayers(context, "targets")))
+                .build());
+        targets.addChild(Commands.literal("nether")
+                .requires(source -> source.hasPermission(2))
+                .executes(context -> teleportToNether(context, EntityArgument.getPlayers(context, "targets")))
+                .build());
+        targets.addChild(Commands.literal("overworld")
+                .requires(source -> source.hasPermission(2))
+                .executes(context -> teleportToOverworld(context, EntityArgument.getPlayers(context, "targets")))
+                .build());
     }
 
     private static Collection<ServerPlayer> self(CommandContext<CommandSourceStack> context) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
@@ -177,6 +260,134 @@ public final class AdminCommands {
         return targets.size();
     }
 
+    private static int teleportToEnd(CommandContext<CommandSourceStack> context) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        return teleportToEnd(context, Set.of(context.getSource().getPlayerOrException()));
+    }
+
+    private static int teleportToEnd(CommandContext<CommandSourceStack> context, Collection<ServerPlayer> players) {
+        int teleported = 0;
+        for (ServerPlayer player : players) {
+        if (player.level().dimension() == Level.END) {
+                continue;
+        }
+
+        ServerLevel end = player.getServer().getLevel(Level.END);
+        if (end == null) {
+                continue;
+        }
+
+        Vec3 destination = ServerLevel.END_SPAWN_POINT.getBottomCenter().subtract(0.0, 1.0, 0.0);
+        EndPlatformFeature.createEndPlatform(end, ServerLevel.END_SPAWN_POINT.below(), true);
+        player.changeDimension(new DimensionTransition(
+                end,
+                destination,
+                Vec3.ZERO,
+                Direction.WEST.toYRot(),
+                0.0F,
+                DimensionTransition.PLAY_PORTAL_SOUND.then(DimensionTransition.PLACE_PORTAL_TICKET)
+        ));
+            teleported++;
+        }
+
+        sendSuccess(context.getSource(), "Teleported " + targetLabel(players) + " to the End");
+        return teleported;
+    }
+
+    private static int teleportToNether(CommandContext<CommandSourceStack> context) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        return teleportToNether(context, Set.of(context.getSource().getPlayerOrException()));
+    }
+
+    private static int teleportToNether(CommandContext<CommandSourceStack> context, Collection<ServerPlayer> players) {
+        int teleported = 0;
+        for (ServerPlayer player : players) {
+        if (player.level().dimension() == Level.NETHER) {
+                continue;
+        }
+
+        ServerLevel currentLevel = player.serverLevel();
+        ServerLevel nether = player.getServer().getLevel(Level.NETHER);
+        if (nether == null) {
+                continue;
+        }
+
+        double scale = DimensionType.getTeleportationScale(currentLevel.dimensionType(), nether.dimensionType());
+        WorldBorder worldBorder = nether.getWorldBorder();
+        BlockPos scaledPosition = worldBorder.clampToBounds(player.getX() * scale, player.getY(), player.getZ() * scale);
+
+        Vec3 position = new Vec3(scaledPosition.getX() + 0.5, scaledPosition.getY(), scaledPosition.getZ() + 0.5);
+        Vec3 collisionFreePosition = PortalShape.findCollisionFreePosition(position, nether, player, player.getDimensions(player.getPose()));
+        player.changeDimension(new DimensionTransition(
+                nether,
+                collisionFreePosition,
+                Vec3.ZERO,
+                player.getYRot(),
+                player.getXRot(),
+                DimensionTransition.PLAY_PORTAL_SOUND
+        ));
+            teleported++;
+        }
+
+        sendSuccess(context.getSource(), "Teleported " + targetLabel(players) + " to the Nether");
+        return teleported;
+    }
+
+    private static int teleportToOverworld(CommandContext<CommandSourceStack> context) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        return teleportToOverworld(context, Set.of(context.getSource().getPlayerOrException()));
+    }
+
+    private static int teleportToOverworld(CommandContext<CommandSourceStack> context, Collection<ServerPlayer> players) {
+        int teleported = 0;
+        for (ServerPlayer player : players) {
+        if (player.level().dimension() == Level.OVERWORLD) {
+                continue;
+        }
+
+        ServerLevel currentLevel = player.serverLevel();
+        ServerLevel overworld = player.getServer().getLevel(Level.OVERWORLD);
+        if (overworld == null) {
+                continue;
+        }
+
+        if (currentLevel.dimension() == Level.END) {
+            DimensionTransition transition;
+            if (player.getRespawnDimension() == Level.OVERWORLD && player.getRespawnPosition() != null) {
+                transition = player.findRespawnPositionAndUseSpawnBlock(false, DimensionTransition.DO_NOTHING);
+            } else {
+                transition = new DimensionTransition(overworld, player, DimensionTransition.DO_NOTHING);
+            }
+
+            player.changeDimension(transition);
+                teleported++;
+                continue;
+        }
+
+        double scale = DimensionType.getTeleportationScale(currentLevel.dimensionType(), overworld.dimensionType());
+        WorldBorder worldBorder = overworld.getWorldBorder();
+        BlockPos scaledPosition = worldBorder.clampToBounds(player.getX() * scale, player.getY(), player.getZ() * scale);
+        int surfaceY = overworld.getHeight(Heightmap.Types.WORLD_SURFACE, scaledPosition.getX(), scaledPosition.getZ());
+        Vec3 surfacePosition = new Vec3(scaledPosition.getX() + 0.5, surfaceY, scaledPosition.getZ() + 0.5);
+        Vec3 collisionFreePosition = PortalShape.findCollisionFreePosition(
+                surfacePosition,
+                overworld,
+                player,
+                player.getDimensions(player.getPose())
+        );
+
+        player.changeDimension(new DimensionTransition(
+                overworld,
+                collisionFreePosition,
+                Vec3.ZERO,
+                player.getYRot(),
+                player.getXRot(),
+                DimensionTransition.DO_NOTHING
+        ));
+            teleported++;
+        }
+
+        sendSuccess(context.getSource(), "Teleported " + targetLabel(players) + " to the Overworld");
+        return teleported;
+    }
+
     private static int openInventory(CommandContext<CommandSourceStack> context, ServerPlayer target) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer viewer = context.getSource().getPlayerOrException();
         MenuProvider provider = new SimpleMenuProvider(
@@ -200,18 +411,13 @@ public final class AdminCommands {
         }
 
         MenuProvider provider = new SimpleMenuProvider(
-                (containerId, viewerInventory, player) -> {
-                    try {
-                        return new InvSeeMenu(
-                                containerId,
-                                viewerInventory,
-                                OfflinePlayerData.inventory(playerDataDirectory, targetProfile.getId(), context.getSource().getServer().registryAccess()),
-                                -1
-                        );
-                    } catch (IOException exception) {
-                        throw new IllegalStateException("Failed to load offline inventory for " + targetProfile.getName(), exception);
-                    }
-                },
+                (containerId, viewerInventory, player) -> new InvSeeMenu(
+                        containerId,
+                        viewerInventory,
+                        context.getSource().getServer(),
+                        targetProfile.getId(),
+                        -1
+                ),
                 Component.literal(targetProfile.getName() + " Inventory")
         );
         viewer.openMenu(provider, buffer -> buffer.writeInt(-1));
@@ -245,21 +451,178 @@ public final class AdminCommands {
         }
 
         MenuProvider provider = new SimpleMenuProvider(
-                (containerId, viewerInventory, player) -> {
-                    try {
-                        return new RefreshingChestMenu(
-                                containerId,
-                                viewerInventory,
-                                OfflinePlayerData.enderChest(playerDataDirectory, targetProfile.getId(), context.getSource().getServer().registryAccess())
-                        );
-                    } catch (IOException exception) {
-                        throw new IllegalStateException("Failed to load offline ender chest for " + targetProfile.getName(), exception);
-                    }
-                },
+                (containerId, viewerInventory, player) -> new RefreshingChestMenu(
+                        containerId,
+                        viewerInventory,
+                        new LiveOrOfflineEnderChestContainer(context.getSource().getServer(), targetProfile.getId())
+                ),
                 Component.literal(targetProfile.getName() + "'s Ender Chest")
         );
         viewer.openMenu(provider);
         return 1;
+    }
+
+    private static int resetPlayer(CommandContext<CommandSourceStack> context, GameProfile profile) throws CommandSyntaxException {
+        clearPlayerInventory(context, profile);
+        clearPlayerEffects(context, profile);
+        clearPlayerAdvancements(context, profile);
+        clearPlayerRecipes(context, profile);
+        clearPlayerStatistics(context, profile);
+        setPlayerXp(context, profile, 0);
+        clearPlayerEnderChest(context, profile);
+        clearPlayerSpawnpoint(context, profile);
+        sendSuccess(context.getSource(), "Reset " + profile.getName());
+        return 1;
+    }
+
+    private static int clearPlayerInventory(CommandContext<CommandSourceStack> context, GameProfile profile) {
+        ServerPlayer player = onlinePlayer(context, profile);
+        if (player != null) {
+            player.getInventory().clearContent();
+            player.containerMenu.broadcastChanges();
+        } else {
+            updateStoredPlayerData(context.getSource().getServer(), profile.getId(), tag -> tag.put("Inventory", new ListTag()));
+        }
+        sendSuccess(context.getSource(), "Cleared inventory for " + profile.getName());
+        return 1;
+    }
+
+    private static int clearPlayerEnderChest(CommandContext<CommandSourceStack> context, GameProfile profile) {
+        ServerPlayer player = onlinePlayer(context, profile);
+        if (player != null) {
+            player.getEnderChestInventory().clearContent();
+        } else {
+            updateStoredPlayerData(context.getSource().getServer(), profile.getId(), tag -> tag.put("EnderItems", new ListTag()));
+        }
+        sendSuccess(context.getSource(), "Cleared ender chest for " + profile.getName());
+        return 1;
+    }
+
+    private static int clearPlayerSpawnpoint(CommandContext<CommandSourceStack> context, GameProfile profile) {
+        ServerPlayer player = onlinePlayer(context, profile);
+        if (player != null) {
+            player.setRespawnPosition(Level.OVERWORLD, null, 0.0F, false, false);
+        } else {
+            updateStoredPlayerData(context.getSource().getServer(), profile.getId(), AdminCommands::removeSpawnpointTags);
+        }
+        sendSuccess(context.getSource(), "Cleared spawnpoint for " + profile.getName());
+        return 1;
+    }
+
+    private static int clearPlayerEffects(CommandContext<CommandSourceStack> context, GameProfile profile) {
+        ServerPlayer player = onlinePlayer(context, profile);
+        if (player != null) {
+            player.removeAllEffects();
+        } else {
+            updateStoredPlayerData(context.getSource().getServer(), profile.getId(), tag -> tag.remove("active_effects"));
+        }
+        sendSuccess(context.getSource(), "Cleared effects for " + profile.getName());
+        return 1;
+    }
+
+    private static int clearPlayerAdvancements(CommandContext<CommandSourceStack> context, GameProfile profile) {
+        ServerPlayer player = onlinePlayer(context, profile);
+        if (player != null) {
+            for (AdvancementHolder advancement : context.getSource().getServer().getAdvancements().getAllAdvancements()) {
+                AdvancementProgress progress = player.getAdvancements().getOrStartProgress(advancement);
+                for (String criterion : progress.getCompletedCriteria()) {
+                    player.getAdvancements().revoke(advancement, criterion);
+                }
+            }
+        }
+        deleteIfExists(context.getSource().getServer().getWorldPath(LevelResource.PLAYER_ADVANCEMENTS_DIR).resolve(profile.getId() + ".json"));
+        sendSuccess(context.getSource(), "Cleared advancements for " + profile.getName());
+        return 1;
+    }
+
+    private static int clearPlayerRecipes(CommandContext<CommandSourceStack> context, GameProfile profile) {
+        ServerPlayer player = onlinePlayer(context, profile);
+        if (player != null) {
+            player.resetRecipes(context.getSource().getServer().getRecipeManager().getRecipes());
+        } else {
+            updateStoredPlayerData(context.getSource().getServer(), profile.getId(), tag -> tag.remove("recipeBook"));
+        }
+        sendSuccess(context.getSource(), "Cleared recipes for " + profile.getName());
+        return 1;
+    }
+
+    private static int clearPlayerStatistics(CommandContext<CommandSourceStack> context, GameProfile profile) {
+        ServerPlayer player = onlinePlayer(context, profile);
+        if (player != null) {
+            clearLiveStats(player);
+        }
+        deleteIfExists(context.getSource().getServer().getWorldPath(LevelResource.PLAYER_STATS_DIR).resolve(profile.getId() + ".json"));
+        sendSuccess(context.getSource(), "Cleared statistics for " + profile.getName());
+        return 1;
+    }
+
+    private static int setPlayerXp(CommandContext<CommandSourceStack> context, GameProfile profile, int levels) {
+        ServerPlayer player = onlinePlayer(context, profile);
+        if (player != null) {
+            player.experienceProgress = 0.0F;
+            player.experienceLevel = levels;
+            player.totalExperience = 0;
+        } else {
+            updateStoredPlayerData(context.getSource().getServer(), profile.getId(), tag -> {
+                tag.putFloat("XpP", 0.0F);
+                tag.putInt("XpLevel", levels);
+                tag.putInt("XpTotal", 0);
+            });
+        }
+        sendSuccess(context.getSource(), "Set XP level for " + profile.getName() + " to " + levels);
+        return 1;
+    }
+
+    private static ServerPlayer onlinePlayer(CommandContext<CommandSourceStack> context, GameProfile profile) {
+        return context.getSource().getServer().getPlayerList().getPlayer(profile.getId());
+    }
+
+    private static void removeSpawnpointTags(CompoundTag tag) {
+        tag.remove("SpawnX");
+        tag.remove("SpawnY");
+        tag.remove("SpawnZ");
+        tag.remove("SpawnForced");
+        tag.remove("SpawnAngle");
+        tag.remove("SpawnDimension");
+    }
+
+    private static void updateStoredPlayerData(MinecraftServer server, UUID playerId, java.util.function.Consumer<CompoundTag> updater) {
+        Path path = server.getWorldPath(LevelResource.PLAYER_DATA_DIR).resolve(playerId + ".dat");
+        if (!Files.isRegularFile(path)) {
+            return;
+        }
+
+        try {
+            CompoundTag tag = NbtIo.readCompressed(path, NbtAccounter.unlimitedHeap());
+            updater.accept(tag);
+            NbtIo.writeCompressed(tag, path);
+        } catch (IOException exception) {
+            LOGGER.warn("Failed to update stored player data for {}", playerId, exception);
+        }
+    }
+
+    private static void deleteIfExists(Path path) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException exception) {
+            LOGGER.warn("Failed to delete {}", path, exception);
+        }
+    }
+
+    private static void clearLiveStats(ServerPlayer player) {
+        try {
+            Field statsField = net.minecraft.stats.StatsCounter.class.getDeclaredField("stats");
+            statsField.setAccessible(true);
+            Object value = statsField.get(player.getStats());
+            if (value instanceof it.unimi.dsi.fastutil.objects.Object2IntMap<?> stats) {
+                stats.clear();
+                player.getStats().markAllDirty();
+                player.getStats().sendStats(player);
+                player.getStats().save();
+            }
+        } catch (ReflectiveOperationException exception) {
+            LOGGER.warn("Failed to clear live statistics for {}", player.getUUID(), exception);
+        }
     }
 
     private static void onIncomingDamage(LivingIncomingDamageEvent event) {
@@ -277,6 +640,16 @@ public final class AdminCommands {
     private static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player && FLYING_PLAYERS.contains(player.getUUID())) {
             applyFlyAbility(player);
+        }
+    }
+
+    private static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            try {
+                OfflinePlayerData.save(player);
+            } catch (IOException exception) {
+                LOGGER.warn("Failed to save player data for {}", player.getUUID(), exception);
+            }
         }
     }
 
@@ -390,11 +763,20 @@ public final class AdminCommands {
         private final Path playerDataDirectory;
         private final HolderLookup.Provider registries;
         private Container offlineEnderChest;
+        private boolean lastDelegateWasLive;
 
         private LiveOrOfflineEnderChestContainer(ServerPlayer target) {
-            this.server = target.getServer();
-            this.targetId = target.getUUID();
-            this.originalEnderChest = target.getEnderChestInventory();
+            this(target.getServer(), target.getUUID(), target.getEnderChestInventory());
+        }
+
+        private LiveOrOfflineEnderChestContainer(MinecraftServer server, UUID targetId) {
+            this(server, targetId, null);
+        }
+
+        private LiveOrOfflineEnderChestContainer(MinecraftServer server, UUID targetId, Container originalEnderChest) {
+            this.server = server;
+            this.targetId = targetId;
+            this.originalEnderChest = originalEnderChest;
             this.playerDataDirectory = this.server.getWorldPath(net.minecraft.world.level.storage.LevelResource.PLAYER_DATA_DIR);
             this.registries = this.server.registryAccess();
         }
@@ -457,14 +839,23 @@ public final class AdminCommands {
         private Container delegate() {
             ServerPlayer liveTarget = this.server.getPlayerList().getPlayer(this.targetId);
             if (liveTarget != null && !liveTarget.hasDisconnected()) {
+                this.lastDelegateWasLive = true;
+                this.offlineEnderChest = null;
                 return liveTarget.getEnderChestInventory();
+            }
+
+            if (this.lastDelegateWasLive) {
+                this.lastDelegateWasLive = false;
+                this.offlineEnderChest = null;
             }
 
             if (this.offlineEnderChest == null) {
                 try {
                     this.offlineEnderChest = OfflinePlayerData.enderChest(this.playerDataDirectory, this.targetId, this.registries);
                 } catch (IOException exception) {
-                    this.offlineEnderChest = this.originalEnderChest;
+                    this.offlineEnderChest = this.originalEnderChest != null
+                            ? this.originalEnderChest
+                            : new net.minecraft.world.SimpleContainer(27);
                 }
             }
             return this.offlineEnderChest;
