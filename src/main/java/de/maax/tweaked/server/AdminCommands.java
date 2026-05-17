@@ -10,8 +10,6 @@ import com.mojang.authlib.GameProfile;
 import com.mojang.logging.LogUtils;
 import de.maax.tweaked.TweakedConfig;
 import de.maax.tweaked.menu.InvSeeMenu;
-import net.minecraft.advancements.AdvancementHolder;
-import net.minecraft.advancements.AdvancementProgress;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -61,7 +59,6 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import org.slf4j.Logger;
 
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
@@ -483,117 +480,6 @@ public final class AdminCommands {
         return 1;
     }
 
-    private static int resetPlayer(CommandContext<CommandSourceStack> context, GameProfile profile) throws CommandSyntaxException {
-        clearPlayerInventory(context, profile);
-        clearPlayerEffects(context, profile);
-        clearPlayerAdvancements(context, profile);
-        clearPlayerRecipes(context, profile);
-        clearPlayerStatistics(context, profile);
-        setPlayerXp(context, profile, 0);
-        clearPlayerEnderChest(context, profile);
-        clearPlayerSpawnpoint(context, profile);
-        sendSuccess(context.getSource(), "Reset " + profile.getName());
-        return 1;
-    }
-
-    private static int clearPlayerInventory(CommandContext<CommandSourceStack> context, GameProfile profile) {
-        ServerPlayer player = onlinePlayer(context, profile);
-        if (player != null) {
-            player.getInventory().clearContent();
-            player.containerMenu.broadcastChanges();
-        } else {
-            updateStoredPlayerData(context.getSource().getServer(), profile.getId(), tag -> tag.put("Inventory", new ListTag()));
-        }
-        sendSuccess(context.getSource(), "Cleared inventory for " + profile.getName());
-        return 1;
-    }
-
-    private static int clearPlayerEnderChest(CommandContext<CommandSourceStack> context, GameProfile profile) {
-        ServerPlayer player = onlinePlayer(context, profile);
-        if (player != null) {
-            player.getEnderChestInventory().clearContent();
-        } else {
-            updateStoredPlayerData(context.getSource().getServer(), profile.getId(), tag -> tag.put("EnderItems", new ListTag()));
-        }
-        sendSuccess(context.getSource(), "Cleared ender chest for " + profile.getName());
-        return 1;
-    }
-
-    private static int clearPlayerSpawnpoint(CommandContext<CommandSourceStack> context, GameProfile profile) {
-        ServerPlayer player = onlinePlayer(context, profile);
-        if (player != null) {
-            player.setRespawnPosition(Level.OVERWORLD, null, 0.0F, false, false);
-        } else {
-            updateStoredPlayerData(context.getSource().getServer(), profile.getId(), AdminCommands::removeSpawnpointTags);
-        }
-        sendSuccess(context.getSource(), "Cleared spawnpoint for " + profile.getName());
-        return 1;
-    }
-
-    private static int clearPlayerEffects(CommandContext<CommandSourceStack> context, GameProfile profile) {
-        ServerPlayer player = onlinePlayer(context, profile);
-        if (player != null) {
-            player.removeAllEffects();
-        } else {
-            updateStoredPlayerData(context.getSource().getServer(), profile.getId(), tag -> tag.remove("active_effects"));
-        }
-        sendSuccess(context.getSource(), "Cleared effects for " + profile.getName());
-        return 1;
-    }
-
-    private static int clearPlayerAdvancements(CommandContext<CommandSourceStack> context, GameProfile profile) {
-        ServerPlayer player = onlinePlayer(context, profile);
-        if (player != null) {
-            for (AdvancementHolder advancement : context.getSource().getServer().getAdvancements().getAllAdvancements()) {
-                AdvancementProgress progress = player.getAdvancements().getOrStartProgress(advancement);
-                for (String criterion : progress.getCompletedCriteria()) {
-                    player.getAdvancements().revoke(advancement, criterion);
-                }
-            }
-        }
-        deleteIfExists(context.getSource().getServer().getWorldPath(LevelResource.PLAYER_ADVANCEMENTS_DIR).resolve(profile.getId() + ".json"));
-        sendSuccess(context.getSource(), "Cleared advancements for " + profile.getName());
-        return 1;
-    }
-
-    private static int clearPlayerRecipes(CommandContext<CommandSourceStack> context, GameProfile profile) {
-        ServerPlayer player = onlinePlayer(context, profile);
-        if (player != null) {
-            player.resetRecipes(context.getSource().getServer().getRecipeManager().getRecipes());
-        } else {
-            updateStoredPlayerData(context.getSource().getServer(), profile.getId(), tag -> tag.remove("recipeBook"));
-        }
-        sendSuccess(context.getSource(), "Cleared recipes for " + profile.getName());
-        return 1;
-    }
-
-    private static int clearPlayerStatistics(CommandContext<CommandSourceStack> context, GameProfile profile) {
-        ServerPlayer player = onlinePlayer(context, profile);
-        if (player != null) {
-            clearLiveStats(player);
-        }
-        deleteIfExists(context.getSource().getServer().getWorldPath(LevelResource.PLAYER_STATS_DIR).resolve(profile.getId() + ".json"));
-        sendSuccess(context.getSource(), "Cleared statistics for " + profile.getName());
-        return 1;
-    }
-
-    private static int setPlayerXp(CommandContext<CommandSourceStack> context, GameProfile profile, int levels) {
-        ServerPlayer player = onlinePlayer(context, profile);
-        if (player != null) {
-            player.experienceProgress = 0.0F;
-            player.experienceLevel = levels;
-            player.totalExperience = 0;
-        } else {
-            updateStoredPlayerData(context.getSource().getServer(), profile.getId(), tag -> {
-                tag.putFloat("XpP", 0.0F);
-                tag.putInt("XpLevel", levels);
-                tag.putInt("XpTotal", 0);
-            });
-        }
-        sendSuccess(context.getSource(), "Set XP level for " + profile.getName() + " to " + levels);
-        return 1;
-    }
-
     public static int teleportToPlayer(CommandSourceStack commandSource, GameProfile profile) throws CommandSyntaxException {
         ServerPlayer source = commandSource.getPlayerOrException();
         ServerPlayer target = onlinePlayer(commandSource, profile);
@@ -636,10 +522,6 @@ public final class AdminCommands {
                 xRot,
                 DimensionTransition.DO_NOTHING
         ));
-    }
-
-    private static ServerPlayer onlinePlayer(CommandContext<CommandSourceStack> context, GameProfile profile) {
-        return context.getSource().getServer().getPlayerList().getPlayer(profile.getId());
     }
 
     private static ServerPlayer onlinePlayer(CommandSourceStack source, GameProfile profile) {
@@ -716,54 +598,6 @@ public final class AdminCommands {
 
     private static Path playerDataPath(MinecraftServer server, UUID playerId) {
         return server.getWorldPath(LevelResource.PLAYER_DATA_DIR).resolve(playerId + ".dat");
-    }
-
-    private static void removeSpawnpointTags(CompoundTag tag) {
-        tag.remove("SpawnX");
-        tag.remove("SpawnY");
-        tag.remove("SpawnZ");
-        tag.remove("SpawnForced");
-        tag.remove("SpawnAngle");
-        tag.remove("SpawnDimension");
-    }
-
-    private static void updateStoredPlayerData(MinecraftServer server, UUID playerId, java.util.function.Consumer<CompoundTag> updater) {
-        Path path = playerDataPath(server, playerId);
-        if (!Files.isRegularFile(path)) {
-            return;
-        }
-
-        try {
-            CompoundTag tag = NbtIo.readCompressed(path, NbtAccounter.unlimitedHeap());
-            updater.accept(tag);
-            NbtIo.writeCompressed(tag, path);
-        } catch (IOException exception) {
-            LOGGER.warn("Failed to update stored player data for {}", playerId, exception);
-        }
-    }
-
-    private static void deleteIfExists(Path path) {
-        try {
-            Files.deleteIfExists(path);
-        } catch (IOException exception) {
-            LOGGER.warn("Failed to delete {}", path, exception);
-        }
-    }
-
-    private static void clearLiveStats(ServerPlayer player) {
-        try {
-            Field statsField = net.minecraft.stats.StatsCounter.class.getDeclaredField("stats");
-            statsField.setAccessible(true);
-            Object value = statsField.get(player.getStats());
-            if (value instanceof it.unimi.dsi.fastutil.objects.Object2IntMap<?> stats) {
-                stats.clear();
-                player.getStats().markAllDirty();
-                player.getStats().sendStats(player);
-                player.getStats().save();
-            }
-        } catch (ReflectiveOperationException exception) {
-            LOGGER.warn("Failed to clear live statistics for {}", player.getUUID(), exception);
-        }
     }
 
     private static void onIncomingDamage(LivingIncomingDamageEvent event) {
