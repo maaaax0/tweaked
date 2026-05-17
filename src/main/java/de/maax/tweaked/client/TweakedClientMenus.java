@@ -5,6 +5,9 @@ import de.maax.tweaked.menu.TweakedMenus;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.neoforge.client.gui.ConfigurationScreen;
+import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RenderNameTagEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
@@ -24,7 +27,9 @@ public final class TweakedClientMenus {
     private TweakedClientMenus() {
     }
 
-    public static void register(IEventBus modEventBus) {
+    public static void register(IEventBus modEventBus, ModContainer modContainer) {
+        modContainer.registerExtensionPoint(IConfigScreenFactory.class,
+                (IConfigScreenFactory) (container, parent) -> new ConfigurationScreen(container, parent));
         modEventBus.addListener(TweakedClientMenus::registerMenuScreens);
         modEventBus.addListener(TweakedClientMenus::registerKeyMappings);
         NeoForge.EVENT_BUS.addListener(TweakedGameMenuButtons::addGameMenuButton);

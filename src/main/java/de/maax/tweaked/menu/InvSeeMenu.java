@@ -47,6 +47,10 @@ public final class InvSeeMenu extends AbstractContainerMenu {
         this(containerId, viewerInventory, new PlayerInventoryContainer(target), target.getId(), target);
     }
 
+    public InvSeeMenu(int containerId, Inventory viewerInventory, MinecraftServer server, UUID targetId, int targetEntityId) {
+        this(containerId, viewerInventory, new PlayerInventoryContainer(server, targetId), targetEntityId, null);
+    }
+
     public InvSeeMenu(int containerId, Inventory viewerInventory, Container targetInventory, int targetEntityId) {
         this(containerId, viewerInventory, targetInventory, targetEntityId, null);
     }
@@ -253,11 +257,20 @@ public final class InvSeeMenu extends AbstractContainerMenu {
         private final Path playerDataDirectory;
         private final HolderLookup.Provider registries;
         private Container offlineInventory;
+        private boolean lastDelegateWasLive;
 
         private PlayerInventoryContainer(ServerPlayer target) {
-            this.server = target.getServer();
-            this.targetId = target.getUUID();
-            this.originalTarget = target;
+            this(target.getServer(), target.getUUID(), target);
+        }
+
+        private PlayerInventoryContainer(MinecraftServer server, UUID targetId) {
+            this(server, targetId, null);
+        }
+
+        private PlayerInventoryContainer(MinecraftServer server, UUID targetId, ServerPlayer originalTarget) {
+            this.server = server;
+            this.targetId = targetId;
+            this.originalTarget = originalTarget;
             this.playerDataDirectory = this.server.getWorldPath(LevelResource.PLAYER_DATA_DIR);
             this.registries = this.server.registryAccess();
         }
@@ -320,14 +333,23 @@ public final class InvSeeMenu extends AbstractContainerMenu {
         private Container delegate() {
             ServerPlayer liveTarget = this.server.getPlayerList().getPlayer(this.targetId);
             if (liveTarget != null && !liveTarget.hasDisconnected()) {
+                this.lastDelegateWasLive = true;
+                this.offlineInventory = null;
                 return new LivePlayerInventory(liveTarget);
+            }
+
+            if (this.lastDelegateWasLive) {
+                this.lastDelegateWasLive = false;
+                this.offlineInventory = null;
             }
 
             if (this.offlineInventory == null) {
                 try {
                     this.offlineInventory = OfflinePlayerData.inventory(this.playerDataDirectory, this.targetId, this.registries);
                 } catch (IOException exception) {
-                    this.offlineInventory = new LivePlayerInventory(this.originalTarget);
+                    this.offlineInventory = this.originalTarget != null
+                            ? new LivePlayerInventory(this.originalTarget)
+                            : new SimpleContainer(TARGET_SLOT_COUNT);
                 }
             }
             return this.offlineInventory;

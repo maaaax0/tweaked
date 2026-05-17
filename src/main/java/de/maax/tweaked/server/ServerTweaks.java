@@ -12,12 +12,16 @@ public final class ServerTweaks {
 
     public static void register() {
         AdminCommands.register();
+        CountedSummonCommand.register();
         MobGriefingRules.register();
+        SpawnControl.register();
+        FillHistory.register();
         NeoForge.EVENT_BUS.addListener(ServerTweaks::onServerStarted);
     }
 
     private static void onServerStarted(ServerStartedEvent event) {
         MinecraftServer server = event.getServer();
+        SpawnControl.load(server);
         SandboxPresets.applyStartupWeatherAndTime(server);
         SpawnOptions.applyPendingSpawn(server);
     }

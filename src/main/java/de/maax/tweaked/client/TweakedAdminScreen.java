@@ -26,6 +26,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameRules;
 import net.neoforged.neoforge.network.PacketDistributor;
 
@@ -43,19 +45,28 @@ import java.util.function.Supplier;
 
 public final class TweakedAdminScreen extends Screen {
     private static final int BUTTON_HEIGHT = 20;
+    private static final int PANEL_MARGIN_X = 56;
+    private static final int PANEL_MARGIN_Y = 32;
+    private static final int PANEL_GAP = 6;
+    private static final int SCREEN_TITLE_Y = 12;
     private static final int ROW_HEIGHT = 20;
     private static final int ROW_GAP = 0;
     private static final int OUTER_GAP = 4;
-    private static final int CATEGORY_SEARCH_GAP = 4;
+    private static final int CATEGORY_SEARCH_HEIGHT = 24;
+    private static final int CONTENT_SEARCH_TOP_OFFSET = 28;
+    private static final int CONTENT_LIST_TOP_OFFSET = CONTENT_SEARCH_TOP_OFFSET + CATEGORY_SEARCH_HEIGHT + 8;
     private static final int SEARCH_TEXT_PADDING_X = 8;
     private static final int SEARCH_TEXT_OFFSET_Y = 2;
     private static final int GAME_RULE_ROW_HEIGHT = 28;
     private static final int GAME_RULE_ROW_CONTENT_HEIGHT = 22;
     private static final int MOB_SPAWNING_TILE_SIZE = 52;
     private static final int MOB_SPAWNING_TILE_GAP = 6;
-    private static final int MOB_SPAWNING_HEADER_HEIGHT = 18;
+    private static final int MOB_SPAWNING_HEADER_HEIGHT = 22;
     private static final int MOB_SPAWNING_ROW_HEIGHT = MOB_SPAWNING_TILE_SIZE + MOB_SPAWNING_TILE_GAP;
     private static final int MOB_SPAWNING_MODEL_PADDING = 7;
+    private static final int RESET_BUTTON_WIDTH = 54;
+    private static final int RESET_BUTTON_HEIGHT = 20;
+    private static final int CATEGORY_RESET_BUTTON_SIZE = 20;
     private static final int PLAYER_ROW_HEIGHT = 96;
     private static final int PLAYER_ROW_GAP = 8;
     private static final int PLAYER_MODEL_WIDTH = 94;
@@ -71,7 +82,11 @@ public final class TweakedAdminScreen extends Screen {
     private static final ResourceLocation HEAL_ICON = ResourceLocation.withDefaultNamespace("textures/gui/sprites/hud/heart/full.png");
     private static final ResourceLocation FEED_ICON = ResourceLocation.withDefaultNamespace("textures/gui/sprites/hud/food_full.png");
     private static final ResourceLocation SET_XP_ICON = ResourceLocation.withDefaultNamespace("textures/item/experience_bottle.png");
-    private static final String[] CATEGORIES = {"Gamerules", "Mob Spawning", "Players"};
+    private static final ResourceLocation RESET_ICON = ResourceLocation.fromNamespaceAndPath(Tweaked.MOD_ID, "textures/gui/reset.png");
+    private static final ItemStack INV_SEE_ICON = new ItemStack(Items.CHEST);
+    private static final ItemStack ENDER_SEE_ICON = new ItemStack(Items.ENDER_CHEST);
+    private static final ItemStack CLEAR_INVENTORY_ICON = new ItemStack(Items.BARRIER);
+    private static final String[] CATEGORIES = {"Players", "Gamerules", "Mob Spawning"};
     private static final String MOB_GRIEFING_CATEGORY = "gamerule.category.tweaked.mob_griefing";
     private static final List<GameRuleDefinition> GAME_RULE_DEFINITIONS = createGameRuleDefinitions();
     private static final List<String> BOOLEAN_GAMERULES = List.of(
@@ -176,7 +191,7 @@ public final class TweakedAdminScreen extends Screen {
     @Override
     protected void init() {
         this.clearWidgets();
-        this.categorySearchBox = new EditBox(this.font, 0, 0, 0, BUTTON_HEIGHT, Component.translatable("menu.tweaked.search"));
+        this.categorySearchBox = new EditBox(this.font, 0, 0, 0, CATEGORY_SEARCH_HEIGHT, Component.translatable("menu.tweaked.search"));
         this.categorySearchBox.setHint(Component.literal("Search..."));
         this.categorySearchBox.setBordered(false);
         this.categorySearchBox.setMaxLength(64);
@@ -251,9 +266,9 @@ public final class TweakedAdminScreen extends Screen {
         this.categorySearchBox.visible = false;
         super.render(guiGraphics, mouseX, mouseY, partialTick);
         this.categorySearchBox.visible = true;
-        int marginX = 56;
-        int marginY = 20;
-        int gap = 6;
+        int marginX = PANEL_MARGIN_X;
+        int marginY = PANEL_MARGIN_Y;
+        int gap = PANEL_GAP;
         int panelTop = marginY;
         int panelBottom = this.height - marginY;
         int availableWidth = this.width - marginX * 2 - gap;
@@ -262,11 +277,10 @@ public final class TweakedAdminScreen extends Screen {
         int middle = left + leftWidth + gap;
         int right = this.width - marginX;
 
+        guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, SCREEN_TITLE_Y, 0xFFFFFF);
         drawPanel(guiGraphics, left, panelTop, left + leftWidth, panelBottom);
         drawPanel(guiGraphics, middle, panelTop, right, panelBottom);
-        if (!this.categoryDropdownOpen) {
-            renderCategorySearchBox(guiGraphics, mouseX, mouseY, partialTick);
-        }
+        renderCategorySearchBox(guiGraphics, mouseX, mouseY, partialTick);
         drawCategories(guiGraphics, left, panelTop, left + leftWidth, mouseX, mouseY);
         drawSelectedCategoryContent(guiGraphics, middle, panelTop, right, panelBottom, mouseX, mouseY);
     }
@@ -278,7 +292,7 @@ public final class TweakedAdminScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 0 && handleCategoryDropdownClick(mouseX, mouseY)) {
+        if (button == 0 && handleCategoryButtonClick(mouseX, mouseY)) {
             return true;
         }
         if (button == 0) {
@@ -292,6 +306,9 @@ public final class TweakedAdminScreen extends Screen {
             clearCategorySearchFocusOnly();
         }
         if (button == 0 && handleGameRuleScrollbarClick(mouseX, mouseY)) {
+            return true;
+        }
+        if (button == 0 && handleResetClick(mouseX, mouseY)) {
             return true;
         }
         if (button == 0 && handleMobSpawningClick(mouseX, mouseY)) {
@@ -446,32 +463,27 @@ public final class TweakedAdminScreen extends Screen {
     }
 
     private void drawCategories(GuiGraphics guiGraphics, int panelLeft, int panelTop, int panelRight, int mouseX, int mouseY) {
-        int dropdownLeft = panelLeft + 20;
-        int dropdownRight = panelRight - 20;
-        int dropdownTop = panelTop + 46;
-        int headerHeight = 24;
-        int listTop = dropdownTop + headerHeight;
-        int rowHeight = 13;
-        int listHeight = rowHeight * CATEGORIES.length + 8;
-        int titleY = panelTop + (dropdownTop - panelTop - this.font.lineHeight) / 2;
+        int buttonLeft = panelLeft + 20;
+        int buttonRight = panelRight - 20;
+        int firstButtonTop = panelTop + 46;
+        int buttonHeight = 24;
+        int buttonGap = 4;
+        int titleY = panelTop + (firstButtonTop - panelTop - this.font.lineHeight) / 2;
 
         guiGraphics.drawCenteredString(this.font, Component.literal("Categories"), (panelLeft + panelRight) / 2, titleY, 0xFFFFFF);
 
-        drawMinecraftButton(guiGraphics, dropdownLeft, dropdownTop, dropdownRight, dropdownTop + headerHeight);
-        guiGraphics.drawString(this.font, Component.literal(this.selectedCategory), dropdownLeft + 8, dropdownTop + 8, 0xFFFFFF, true);
-        drawDropdownIndicator(guiGraphics, dropdownRight - 29, dropdownTop + 7);
+        for (int index = 0; index < CATEGORIES.length; index++) {
+            String category = CATEGORIES[index];
+            int buttonTop = firstButtonTop + index * (buttonHeight + buttonGap);
+            int buttonBottom = buttonTop + buttonHeight;
+            boolean hovered = contains(mouseX, mouseY, buttonLeft, buttonTop, buttonRight, buttonBottom);
 
-        if (this.categoryDropdownOpen) {
-            guiGraphics.fill(dropdownLeft, listTop, dropdownRight, listTop + listHeight, 0xFF000000);
-            drawBorder(guiGraphics, dropdownLeft, listTop, dropdownRight, listTop + listHeight, 0xFF80FFFF);
-
-            for (int index = 0; index < CATEGORIES.length; index++) {
-                int rowTop = listTop + 4 + index * rowHeight;
-                if (contains(mouseX, mouseY, dropdownLeft + 1, rowTop, dropdownRight - 1, rowTop + rowHeight)) {
-                    guiGraphics.fill(dropdownLeft + 1, rowTop, dropdownRight - 1, rowTop + rowHeight, 0x80404040);
-                }
-                guiGraphics.drawString(this.font, Component.literal(CATEGORIES[index]), dropdownLeft + 8, listTop + 6 + index * rowHeight, 0xFFFFFF, true);
+            drawMinecraftButton(guiGraphics, buttonLeft, buttonTop, buttonRight, buttonBottom);
+            if (hovered) {
+                drawBorder(guiGraphics, buttonLeft, buttonTop, buttonRight, buttonBottom, 0xFFFFFFFF);
             }
+
+            guiGraphics.drawCenteredString(this.font, Component.literal(category), (buttonLeft + buttonRight) / 2, buttonTop + 8, 0xFFFFFF);
         }
     }
 
@@ -489,7 +501,7 @@ public final class TweakedAdminScreen extends Screen {
         int titleY = panelTop + 13;
         int listLeft = panelLeft + 18;
         int listRight = panelRight - 18;
-        int listTop = panelTop + 34;
+        int listTop = panelTop + CONTENT_LIST_TOP_OFFSET;
         int listBottom = panelBottom - 16;
         int labelLeft = listLeft + 10;
         int controlWidth = 68;
@@ -497,6 +509,7 @@ public final class TweakedAdminScreen extends Screen {
         int labelWidth = Math.max(80, controlLeft - labelLeft - 12);
 
         guiGraphics.drawCenteredString(this.font, Component.translatable("editGamerule.title"), (panelLeft + panelRight) / 2, titleY, 0xFFFFFF);
+        drawResetButton(guiGraphics, panelLeft, panelTop, panelRight, mouseX, mouseY);
 
         List<GameRuleMenuRow> rows = visibleGameRuleRows();
         int visibleRows = Math.max(1, (listBottom - listTop) / GAME_RULE_ROW_HEIGHT);
@@ -511,20 +524,25 @@ public final class TweakedAdminScreen extends Screen {
             if (row.categoryKey() != null) {
                 Component category = Component.translatable(row.categoryKey());
                 drawGameRuleLabel(guiGraphics, category, listLeft, y + 8, labelWidth, 0xFFFF55);
+                drawCategoryResetButton(guiGraphics, listRight, y + 2, mouseX, mouseY);
                 continue;
             }
 
             int rowRight = controlLeft - 8;
             int rowBottom = y + GAME_RULE_ROW_CONTENT_HEIGHT;
             boolean hovering = contains(mouseX, mouseY, listLeft, y, listRight, rowBottom);
+            boolean differsFromDefault = differsFromDefault(row.definition());
             guiGraphics.fill(listLeft, y, rowRight, rowBottom, 0x70000000);
+            if (differsFromDefault) {
+                guiGraphics.fill(listLeft, y, listLeft + 3, rowBottom, 0xFFFFFF55);
+            }
             if (contains(mouseX, mouseY, listLeft, y, rowRight, rowBottom)) {
                 drawBorder(guiGraphics, listLeft, y, rowRight, rowBottom, 0xFF80FFFF);
             }
 
             drawGameRuleLabel(guiGraphics, Component.translatable(row.rule().getDescriptionId()), labelLeft, y, labelWidth, 0xFFFFFF);
 
-            drawGameRuleControl(guiGraphics, row, controlLeft, y + 1, listRight - 8, y + 21);
+            drawGameRuleControl(guiGraphics, row, controlLeft, y + 1, listRight - 8, y + 21, mouseX, mouseY, differsFromDefault);
             if (hovering) {
                 this.setTooltipForNextRenderPass(createGameRuleTooltip(row.definition()));
             }
@@ -539,7 +557,7 @@ public final class TweakedAdminScreen extends Screen {
         int titleY = panelTop + 13;
         int listLeft = panelLeft + 18;
         int listRight = panelRight - 18;
-        int listTop = panelTop + 34;
+        int listTop = panelTop + CONTENT_LIST_TOP_OFFSET;
         int listBottom = panelBottom - 16;
         int columns = mobSpawningColumns(listLeft, listRight);
         List<MobSpawningRow> rows = visibleMobSpawningRows(columns);
@@ -549,6 +567,7 @@ public final class TweakedAdminScreen extends Screen {
         this.mobSpawningScroll = Math.max(0, Math.min(maxScroll, this.mobSpawningScroll));
 
         guiGraphics.drawCenteredString(this.font, Component.literal("Mob Spawning"), (panelLeft + panelRight) / 2, titleY, 0xFFFFFF);
+        drawResetButton(guiGraphics, panelLeft, panelTop, panelRight, mouseX, mouseY);
 
         guiGraphics.enableScissor(listLeft, listTop, listRight, listBottom);
         int y = listTop - this.mobSpawningScroll;
@@ -557,6 +576,7 @@ public final class TweakedAdminScreen extends Screen {
             if (y + rowHeight >= listTop && y <= listBottom) {
                 if (row.namespace() != null) {
                     guiGraphics.drawString(this.font, Component.literal(namespaceTitle(row.namespace())), listLeft, y + 4, 0xFFFF55, false);
+                    drawCategoryResetButton(guiGraphics, listRight, y, mouseX, mouseY);
                 } else {
                     drawMobSpawningRow(guiGraphics, row.mobs(), listLeft, listRight, y, mouseX, mouseY);
                 }
@@ -614,7 +634,7 @@ public final class TweakedAdminScreen extends Screen {
         int titleY = panelTop + 13;
         int listLeft = panelLeft + 18;
         int listRight = panelRight - 18;
-        int listTop = panelTop + 34;
+        int listTop = panelTop + CONTENT_LIST_TOP_OFFSET;
         int listBottom = panelBottom - 16;
         List<GameProfile> players = visiblePlayerProfiles();
         int contentHeight = playerContentHeight(players.size());
@@ -684,27 +704,46 @@ public final class TweakedAdminScreen extends Screen {
     }
 
     private void drawPlayerActions(GuiGraphics guiGraphics, GameProfile profile, int left, int top, int right, int mouseX, int mouseY) {
-        drawPlayerActionButton(guiGraphics, TP_TO_ICON, Component.literal("TP To"), left, top, mouseX, mouseY);
-        drawPlayerActionButton(guiGraphics, TP_HERE_ICON, Component.literal("TP Here"), left + 24, top, mouseX, mouseY);
-        drawPlayerActionButton(guiGraphics, HEAL_ICON, Component.literal("Heal"), left + 48, top, mouseX, mouseY);
-        drawPlayerActionButton(guiGraphics, FEED_ICON, Component.literal("Feed"), left + 72, top, mouseX, mouseY);
+        drawPlayerActionButton(guiGraphics, TP_TO_ICON, "teleport_to", left, top, mouseX, mouseY);
+        drawPlayerActionButton(guiGraphics, TP_HERE_ICON, "teleport_here", left + 24, top, mouseX, mouseY);
+        drawPlayerActionButton(guiGraphics, HEAL_ICON, "heal", left + 48, top, mouseX, mouseY);
+        drawPlayerActionButton(guiGraphics, FEED_ICON, "feed", left + 72, top, mouseX, mouseY);
+        drawPlayerActionButton(guiGraphics, INV_SEE_ICON, "invsee", left + 96, top, mouseX, mouseY);
+        drawPlayerActionButton(guiGraphics, ENDER_SEE_ICON, "endersee", left + 120, top, mouseX, mouseY);
+        drawPlayerActionButton(guiGraphics, CLEAR_INVENTORY_ICON, "clear_inventory", left + 144, top, mouseX, mouseY);
 
         int xpY = top + PLAYER_ACTION_BUTTON_SIZE + PLAYER_ACTION_BUTTON_GAP;
         int inputRight = left + playerActionAreaWidth() - PLAYER_ACTION_BUTTON_SIZE - PLAYER_ACTION_BUTTON_GAP;
-        guiGraphics.fill(left, xpY, inputRight, xpY + PLAYER_ACTION_BUTTON_SIZE, 0xFF000000);
-        drawBorder(guiGraphics, left, xpY, inputRight, xpY + PLAYER_ACTION_BUTTON_SIZE, profile.getId().equals(this.focusedXpPlayer) ? 0xFFFFFFFF : 0xFF808080);
-        String xpText = profile.getId().equals(this.focusedXpPlayer) ? this.xpDraft : "0";
-        drawTruncated(guiGraphics, Component.literal(xpText), left + 4, xpY + 6, inputRight - left - 8, 0xFFFFFF);
-        drawPlayerActionButton(guiGraphics, SET_XP_ICON, Component.literal("Set XP"), inputRight + PLAYER_ACTION_BUTTON_GAP, xpY, mouseX, mouseY);
+        String xpText = profile.getId().equals(this.focusedXpPlayer)
+                ? this.xpDraft.isEmpty() ? "_" : this.xpDraft
+                : "0";
+        drawInputField(guiGraphics, left, xpY, inputRight, xpY + PLAYER_ACTION_BUTTON_SIZE, xpText, profile.getId().equals(this.focusedXpPlayer));
+        drawPlayerActionButton(guiGraphics, SET_XP_ICON, "set_level", inputRight + PLAYER_ACTION_BUTTON_GAP, xpY, mouseX, mouseY);
     }
 
-    private void drawPlayerActionButton(GuiGraphics guiGraphics, ResourceLocation icon, Component label, int x, int y, int mouseX, int mouseY) {
+    private void drawPlayerActionButton(GuiGraphics guiGraphics, ResourceLocation icon, String actionKey, int x, int y, int mouseX, int mouseY) {
         drawMinecraftButton(guiGraphics, x, y, x + PLAYER_ACTION_BUTTON_SIZE, y + PLAYER_ACTION_BUTTON_SIZE);
         if (contains(mouseX, mouseY, x, y, x + PLAYER_ACTION_BUTTON_SIZE, y + PLAYER_ACTION_BUTTON_SIZE)) {
-            drawBorder(guiGraphics, x, y, x + PLAYER_ACTION_BUTTON_SIZE, y + PLAYER_ACTION_BUTTON_SIZE, 0xFF80FFFF);
-            this.setTooltipForNextRenderPass(label);
+            drawBorder(guiGraphics, x, y, x + PLAYER_ACTION_BUTTON_SIZE, y + PLAYER_ACTION_BUTTON_SIZE, 0xFFFFFFFF);
+            this.setTooltipForNextRenderPass(createPlayerActionTooltip(actionKey));
         }
         guiGraphics.blit(icon, x + 2, y + 2, 0, 0.0F, 0.0F, 16, 16, 16, 16);
+    }
+
+    private void drawPlayerActionButton(GuiGraphics guiGraphics, ItemStack icon, String actionKey, int x, int y, int mouseX, int mouseY) {
+        drawMinecraftButton(guiGraphics, x, y, x + PLAYER_ACTION_BUTTON_SIZE, y + PLAYER_ACTION_BUTTON_SIZE);
+        if (contains(mouseX, mouseY, x, y, x + PLAYER_ACTION_BUTTON_SIZE, y + PLAYER_ACTION_BUTTON_SIZE)) {
+            drawBorder(guiGraphics, x, y, x + PLAYER_ACTION_BUTTON_SIZE, y + PLAYER_ACTION_BUTTON_SIZE, 0xFFFFFFFF);
+            this.setTooltipForNextRenderPass(createPlayerActionTooltip(actionKey));
+        }
+        guiGraphics.renderItem(icon, x + 2, y + 2);
+    }
+
+    private List<FormattedCharSequence> createPlayerActionTooltip(String actionKey) {
+        List<FormattedCharSequence> tooltip = new ArrayList<>();
+        tooltip.add(Component.translatable("menu.tweaked." + actionKey).withStyle(ChatFormatting.YELLOW).getVisualOrderText());
+        this.font.split(Component.translatable("menu.tweaked." + actionKey + ".description"), 150).forEach(tooltip::add);
+        return tooltip;
     }
 
     private void drawPixelScrollbar(GuiGraphics guiGraphics, int scroll, int maxScroll, int x, int top, int bottom, int contentHeight) {
@@ -731,17 +770,42 @@ public final class TweakedAdminScreen extends Screen {
         return Math.max(32, Math.min(scrollerHeight, scrollbarHeight - 8));
     }
 
-    private void drawGameRuleControl(GuiGraphics guiGraphics, GameRuleMenuRow row, int left, int top, int right, int bottom) {
+    private void drawGameRuleControl(
+            GuiGraphics guiGraphics,
+            GameRuleMenuRow row,
+            int left,
+            int top,
+            int right,
+            int bottom,
+            int mouseX,
+            int mouseY,
+            boolean differsFromDefault
+    ) {
         if (row.definition().kind() == GameRuleKind.BOOLEAN) {
             drawMinecraftButton(guiGraphics, left, top, right, bottom);
+            if (contains(mouseX, mouseY, left, top, right, bottom)) {
+                drawBorder(guiGraphics, left, top, right, bottom, 0xFFFFFFFF);
+            }
             boolean enabled = booleanRuleValue(row.rule());
-            guiGraphics.drawCenteredString(this.font, enabled ? Component.literal("ON") : Component.literal("OFF"), (left + right) / 2, top + 6, 0xFFFFFF);
+            Component value = enabled ? Component.literal("ON") : Component.literal("OFF");
+            guiGraphics.drawCenteredString(this.font, gameRuleControlText(value, differsFromDefault), (left + right) / 2, top + 6, 0xFFFFFF);
             return;
         }
 
-        guiGraphics.fill(left, top, right, bottom, 0xFF000000);
-        drawBorder(guiGraphics, left, top, right, bottom, row.rule() == this.focusedIntegerRule ? 0xFFFFFFFF : 0xFF808080);
-        guiGraphics.drawString(this.font, Component.literal(integerDraft(row.rule())), left + 6, top + 6, 0xFFFFFF, false);
+        boolean focused = row.rule() == this.focusedIntegerRule;
+        String value = integerDraft(row.rule());
+        drawInputField(guiGraphics, left, top, right, bottom, focused && value.isEmpty() ? "_" : value, focused);
+    }
+
+    private Component gameRuleControlText(Component value, boolean differsFromDefault) {
+        if (!differsFromDefault) {
+            return value;
+        }
+
+        return Component.literal("[ ")
+                .append(value.copy().withStyle(ChatFormatting.WHITE))
+                .append(" ]")
+                .withStyle(ChatFormatting.YELLOW);
     }
 
     private void drawGameRuleLabel(GuiGraphics guiGraphics, Component label, int x, int y, int width, int color) {
@@ -773,31 +837,33 @@ public final class TweakedAdminScreen extends Screen {
         guiGraphics.drawString(this.font, Component.literal(text), x, y, color, false);
     }
 
+    private void drawInputField(GuiGraphics guiGraphics, int left, int top, int right, int bottom, String value, boolean focused) {
+        guiGraphics.fill(left, top, right, bottom, 0xFF000000);
+        drawBorder(guiGraphics, left, top, right, bottom, focused ? 0xFFFFFFFF : 0xFF808080);
+        drawTruncated(guiGraphics, Component.literal(value), left + 4, top + 6, right - left - 8, 0xFFFFFF);
+    }
+
     private void updateCategorySearchBoxBounds() {
         if (this.categorySearchBox == null) {
             return;
         }
 
-        int marginX = 56;
-        int marginY = 20;
-        int gap = 6;
+        int marginX = PANEL_MARGIN_X;
+        int marginY = PANEL_MARGIN_Y;
+        int gap = PANEL_GAP;
         int availableWidth = this.width - marginX * 2 - gap;
         int leftWidth = availableWidth / 3;
-        int panelLeft = marginX;
-        int panelRight = panelLeft + leftWidth;
-        int dropdownLeft = panelLeft + 20;
-        int dropdownRight = panelRight - 20;
-        int dropdownTop = marginY + 46;
-        int headerHeight = 24;
-        int searchTop = dropdownTop + headerHeight + CATEGORY_SEARCH_GAP;
+        int panelLeft = marginX + leftWidth + gap;
+        int panelRight = this.width - marginX;
+        int searchTop = marginY + CONTENT_SEARCH_TOP_OFFSET;
 
-        this.categorySearchLeft = dropdownLeft;
+        this.categorySearchLeft = panelLeft + 18;
         this.categorySearchTop = searchTop;
-        this.categorySearchRight = dropdownRight;
-        this.categorySearchBottom = searchTop + BUTTON_HEIGHT;
+        this.categorySearchRight = panelRight - 18;
+        this.categorySearchBottom = searchTop + CATEGORY_SEARCH_HEIGHT;
 
         this.categorySearchBox.setX(this.categorySearchLeft + SEARCH_TEXT_PADDING_X);
-        this.categorySearchBox.setY(this.categorySearchTop + (BUTTON_HEIGHT - this.font.lineHeight) / 2 + SEARCH_TEXT_OFFSET_Y);
+        this.categorySearchBox.setY(this.categorySearchTop + (CATEGORY_SEARCH_HEIGHT - this.font.lineHeight) / 2 + SEARCH_TEXT_OFFSET_Y);
         this.categorySearchBox.setWidth(this.categorySearchRight - this.categorySearchLeft - SEARCH_TEXT_PADDING_X * 2);
         this.categorySearchBox.setHeight(this.font.lineHeight);
     }
@@ -823,6 +889,10 @@ public final class TweakedAdminScreen extends Screen {
 
         if (focused) {
             this.categorySearchBox.setFocused(true);
+            String value = this.categorySearchBox.getValue();
+            int cursorX = this.categorySearchBox.getX() + this.font.width(value);
+            int cursorY = this.categorySearchBox.getY();
+            guiGraphics.drawString(this.font, "_", cursorX, cursorY, 0xFFFFFFFF, false);
         }
     }
 
@@ -850,45 +920,32 @@ public final class TweakedAdminScreen extends Screen {
         }
     }
 
-    private boolean handleCategoryDropdownClick(double mouseX, double mouseY) {
-        int marginX = 56;
-        int marginY = 20;
-        int gap = 6;
+    private boolean handleCategoryButtonClick(double mouseX, double mouseY) {
+        int marginX = PANEL_MARGIN_X;
+        int marginY = PANEL_MARGIN_Y;
+        int gap = PANEL_GAP;
         int availableWidth = this.width - marginX * 2 - gap;
         int leftWidth = availableWidth / 3;
         int panelLeft = marginX;
         int panelRight = panelLeft + leftWidth;
-        int dropdownLeft = panelLeft + 20;
-        int dropdownRight = panelRight - 20;
-        int dropdownTop = marginY + 46;
-        int headerHeight = 24;
-        int listTop = dropdownTop + headerHeight;
-        int rowHeight = 13;
-        int listHeight = rowHeight * CATEGORIES.length + 8;
+        int buttonLeft = panelLeft + 20;
+        int buttonRight = panelRight - 20;
+        int firstButtonTop = marginY + 46;
+        int buttonHeight = 24;
+        int buttonGap = 4;
 
-        if (contains(mouseX, mouseY, dropdownLeft, dropdownTop, dropdownRight, dropdownTop + headerHeight)) {
-            this.categoryDropdownOpen = !this.categoryDropdownOpen;
-            playClickSound();
-            return true;
-        }
-
-        if (this.categoryDropdownOpen && contains(mouseX, mouseY, dropdownLeft, listTop, dropdownRight, listTop + listHeight)) {
-            int index = (int)((mouseY - listTop - 6) / rowHeight);
-            if (index >= 0 && index < CATEGORIES.length) {
+        for (int index = 0; index < CATEGORIES.length; index++) {
+            int buttonTop = firstButtonTop + index * (buttonHeight + buttonGap);
+            int buttonBottom = buttonTop + buttonHeight;
+            if (contains(mouseX, mouseY, buttonLeft, buttonTop, buttonRight, buttonBottom)) {
                 this.selectedCategory = CATEGORIES[index];
                 this.gameRuleScroll = 0;
                 this.mobSpawningScroll = 0;
                 this.playerScroll = 0;
                 clearCategorySearchFocus();
                 playClickSound();
+                return true;
             }
-            this.categoryDropdownOpen = false;
-            return true;
-        }
-
-        if (this.categoryDropdownOpen) {
-            this.categoryDropdownOpen = false;
-            return true;
         }
 
         return false;
@@ -914,6 +971,31 @@ public final class TweakedAdminScreen extends Screen {
         return true;
     }
 
+    private boolean handleResetClick(double mouseX, double mouseY) {
+        if (!"Gamerules".equals(this.selectedCategory) && !"Mob Spawning".equals(this.selectedCategory)) {
+            return false;
+        }
+
+        ResetButton button = resetButtonBounds();
+        if (!contains(mouseX, mouseY, button.left(), button.top(), button.right(), button.bottom())) {
+            return false;
+        }
+
+        if ("Gamerules".equals(this.selectedCategory)) {
+            confirmCommand(Component.translatable("menu.tweaked.gamerules.reset_all.confirm"), () -> {
+                resetDisplayedGameRules();
+                sendCommand("tweaked gamerules reset");
+            });
+        } else {
+            confirmCommand(Component.translatable("menu.tweaked.spawning.reset_all.confirm"), () -> {
+                this.disabledMobSpawningTypes.clear();
+                sendCommand("tweaked spawning reset");
+            });
+        }
+        playClickSound();
+        return true;
+    }
+
     private void updateGameRuleScrollFromScrollbar(double mouseY) {
         GameRuleScrollbar scrollbar = gameRuleScrollbar();
         if (scrollbar.maxScroll() <= 0) {
@@ -928,14 +1010,14 @@ public final class TweakedAdminScreen extends Screen {
     }
 
     private GameRuleScrollbar gameRuleScrollbar() {
-        int marginX = 56;
-        int marginY = 20;
-        int gap = 6;
+        int marginX = PANEL_MARGIN_X;
+        int marginY = PANEL_MARGIN_Y;
+        int gap = PANEL_GAP;
         int availableWidth = this.width - marginX * 2 - gap;
         int leftWidth = availableWidth / 3;
         int panelRight = this.width - marginX;
         int listRight = panelRight - 18;
-        int listTop = marginY + 34;
+        int listTop = marginY + CONTENT_LIST_TOP_OFFSET;
         int listBottom = this.height - marginY - 16;
         int scrollbarLeft = listRight + 4;
         int scrollbarHeight = listBottom - listTop;
@@ -951,16 +1033,16 @@ public final class TweakedAdminScreen extends Screen {
             return false;
         }
 
-        int marginX = 56;
-        int marginY = 20;
-        int gap = 6;
+        int marginX = PANEL_MARGIN_X;
+        int marginY = PANEL_MARGIN_Y;
+        int gap = PANEL_GAP;
         int availableWidth = this.width - marginX * 2 - gap;
         int leftWidth = availableWidth / 3;
         int panelLeft = marginX + leftWidth + gap;
         int panelRight = this.width - marginX;
         int listLeft = panelLeft + 18;
         int listRight = panelRight - 18;
-        int listTop = marginY + 34;
+        int listTop = marginY + CONTENT_LIST_TOP_OFFSET;
         int controlLeft = listRight - 76;
         int controlRight = listRight - 8;
 
@@ -977,6 +1059,11 @@ public final class TweakedAdminScreen extends Screen {
 
         GameRuleMenuRow row = rows.get(rowIndex);
         if (row.categoryKey() != null) {
+            if (isCategoryResetButtonHovered(mouseX, mouseY, listRight, listTop + visibleIndex * GAME_RULE_ROW_HEIGHT + 2)) {
+                resetGameRuleCategory(row.categoryKey());
+                playClickSound();
+                return true;
+            }
             return false;
         }
 
@@ -986,6 +1073,7 @@ public final class TweakedAdminScreen extends Screen {
 
         if (row.definition().kind() == GameRuleKind.INTEGER) {
             this.focusedIntegerRule = row.rule();
+            this.integerRuleDrafts.put(row.rule().getId(), "");
             clearCategorySearchFocusOnly();
             playClickSound();
             return true;
@@ -1003,16 +1091,16 @@ public final class TweakedAdminScreen extends Screen {
             return false;
         }
 
-        int marginX = 56;
-        int marginY = 20;
-        int gap = 6;
+        int marginX = PANEL_MARGIN_X;
+        int marginY = PANEL_MARGIN_Y;
+        int gap = PANEL_GAP;
         int availableWidth = this.width - marginX * 2 - gap;
         int leftWidth = availableWidth / 3;
         int panelLeft = marginX + leftWidth + gap;
         int panelRight = this.width - marginX;
         int listLeft = panelLeft + 18;
         int listRight = panelRight - 18;
-        int listTop = marginY + 34;
+        int listTop = marginY + CONTENT_LIST_TOP_OFFSET;
         int listBottom = this.height - marginY - 16;
         if (!contains(mouseX, mouseY, listLeft, listTop, listRight, listBottom)) {
             return false;
@@ -1023,6 +1111,11 @@ public final class TweakedAdminScreen extends Screen {
         int y = listTop - this.mobSpawningScroll;
         for (MobSpawningRow row : rows) {
             int rowHeight = mobSpawningRowHeight(row);
+            if (row.namespace() != null && isCategoryResetButtonHovered(mouseX, mouseY, listRight, y)) {
+                resetMobSpawningNamespace(row.namespace());
+                playClickSound();
+                return true;
+            }
             if (row.namespace() == null && y + rowHeight >= listTop && y <= listBottom) {
                 for (int index = 0; index < row.mobs().size(); index++) {
                     int tileLeft = listLeft + index * (MOB_SPAWNING_TILE_SIZE + MOB_SPAWNING_TILE_GAP);
@@ -1051,16 +1144,16 @@ public final class TweakedAdminScreen extends Screen {
             return false;
         }
 
-        int marginX = 56;
-        int marginY = 20;
-        int gap = 6;
+        int marginX = PANEL_MARGIN_X;
+        int marginY = PANEL_MARGIN_Y;
+        int gap = PANEL_GAP;
         int availableWidth = this.width - marginX * 2 - gap;
         int leftWidth = availableWidth / 3;
         int panelLeft = marginX + leftWidth + gap;
         int panelRight = this.width - marginX;
         int listLeft = panelLeft + 18;
         int listRight = panelRight - 18;
-        int listTop = marginY + 34;
+        int listTop = marginY + CONTENT_LIST_TOP_OFFSET;
         int listBottom = this.height - marginY - 16;
         if (!contains(mouseX, mouseY, listLeft, listTop, listRight, listBottom)) {
             return false;
@@ -1085,16 +1178,27 @@ public final class TweakedAdminScreen extends Screen {
 
     private boolean handlePlayerActionClick(GameProfile profile, int left, int top, double mouseX, double mouseY) {
         String[] commands = {
-                "tp " + selfName() + " " + profile.getName(),
-                "tp " + profile.getName() + " " + selfName(),
+                null,
+                null,
                 "heal " + profile.getName(),
-                "feed " + profile.getName()
+                "feed " + profile.getName(),
+                "invsee " + profile.getName(),
+                "endersee " + profile.getName(),
+                null
         };
 
         for (int index = 0; index < commands.length; index++) {
             int x = left + index * (PLAYER_ACTION_BUTTON_SIZE + PLAYER_ACTION_BUTTON_GAP);
             if (contains(mouseX, mouseY, x, top, x + PLAYER_ACTION_BUTTON_SIZE, top + PLAYER_ACTION_BUTTON_SIZE)) {
-                sendCommand(commands[index]);
+                if (index == 0) {
+                    sendPlayerTeleport(profile, GameRuleSync.PlayerTeleportMode.TO_TARGET);
+                } else if (index == 1) {
+                    sendPlayerTeleport(profile, GameRuleSync.PlayerTeleportMode.HERE);
+                } else if (index == 6) {
+                    confirmClearInventory(profile.getName());
+                } else {
+                    sendCommand(commands[index]);
+                }
                 return true;
             }
         }
@@ -1103,7 +1207,7 @@ public final class TweakedAdminScreen extends Screen {
         int inputRight = left + playerActionAreaWidth() - PLAYER_ACTION_BUTTON_SIZE - PLAYER_ACTION_BUTTON_GAP;
         if (contains(mouseX, mouseY, left, xpY, inputRight, xpY + PLAYER_ACTION_BUTTON_SIZE)) {
             this.focusedXpPlayer = profile.getId();
-            this.xpDraft = "0";
+            this.xpDraft = "";
             return true;
         }
         int setLeft = inputRight + PLAYER_ACTION_BUTTON_GAP;
@@ -1118,9 +1222,9 @@ public final class TweakedAdminScreen extends Screen {
     }
 
     private boolean isGameRulePanelHovered(double mouseX, double mouseY) {
-        int marginX = 56;
-        int marginY = 20;
-        int gap = 6;
+        int marginX = PANEL_MARGIN_X;
+        int marginY = PANEL_MARGIN_Y;
+        int gap = PANEL_GAP;
         int availableWidth = this.width - marginX * 2 - gap;
         int leftWidth = availableWidth / 3;
         int panelLeft = marginX + leftWidth + gap;
@@ -1129,8 +1233,8 @@ public final class TweakedAdminScreen extends Screen {
     }
 
     private int gameRuleVisibleRows() {
-        int marginY = 20;
-        int listTop = marginY + 34;
+        int marginY = PANEL_MARGIN_Y;
+        int listTop = marginY + CONTENT_LIST_TOP_OFFSET;
         int listBottom = this.height - marginY - 16;
         return Math.max(1, (listBottom - listTop) / GAME_RULE_ROW_HEIGHT);
     }
@@ -1195,16 +1299,16 @@ public final class TweakedAdminScreen extends Screen {
     }
 
     private int maxMobSpawningScroll() {
-        int marginX = 56;
-        int marginY = 20;
-        int gap = 6;
+        int marginX = PANEL_MARGIN_X;
+        int marginY = PANEL_MARGIN_Y;
+        int gap = PANEL_GAP;
         int availableWidth = this.width - marginX * 2 - gap;
         int leftWidth = availableWidth / 3;
         int panelLeft = marginX + leftWidth + gap;
         int panelRight = this.width - marginX;
         int listLeft = panelLeft + 18;
         int listRight = panelRight - 18;
-        int listTop = marginY + 34;
+        int listTop = marginY + CONTENT_LIST_TOP_OFFSET;
         int listBottom = this.height - marginY - 16;
         int columns = mobSpawningColumns(listLeft, listRight);
         int contentHeight = mobSpawningContentHeight(visibleMobSpawningRows(columns));
@@ -1212,21 +1316,21 @@ public final class TweakedAdminScreen extends Screen {
     }
 
     private int maxPlayerScroll() {
-        int marginX = 56;
-        int marginY = 20;
-        int gap = 6;
+        int marginX = PANEL_MARGIN_X;
+        int marginY = PANEL_MARGIN_Y;
+        int gap = PANEL_GAP;
         int availableWidth = this.width - marginX * 2 - gap;
         int leftWidth = availableWidth / 3;
         int panelLeft = marginX + leftWidth + gap;
         int panelRight = this.width - marginX;
-        int listTop = marginY + 34;
+        int listTop = marginY + CONTENT_LIST_TOP_OFFSET;
         int listBottom = this.height - marginY - 16;
         int contentHeight = playerContentHeight(visiblePlayerProfiles().size());
         return Math.max(0, contentHeight - (listBottom - listTop));
     }
 
     private int playerActionAreaWidth() {
-        return PLAYER_ACTION_BUTTON_SIZE * 4 + PLAYER_ACTION_BUTTON_GAP * 3;
+        return PLAYER_ACTION_BUTTON_SIZE * 7 + PLAYER_ACTION_BUTTON_GAP * 6;
     }
 
     private int playerContentHeight(int playerCount) {
@@ -1368,6 +1472,13 @@ public final class TweakedAdminScreen extends Screen {
         return this.displayedGameRules.getRule((GameRules.Key<GameRules.IntegerValue>)rule).get();
     }
 
+    private boolean differsFromDefault(GameRuleDefinition definition) {
+        if (definition.kind() == GameRuleKind.BOOLEAN) {
+            return booleanRuleValue(definition.rule()) != Boolean.parseBoolean(definition.defaultValue());
+        }
+        return integerRuleValue(definition.rule()) != Integer.parseInt(definition.defaultValue());
+    }
+
     private String integerDraft(GameRules.Key<?> rule) {
         return this.integerRuleDrafts.computeIfAbsent(rule.getId(), ignored -> Integer.toString(integerRuleValue(rule)));
     }
@@ -1495,6 +1606,103 @@ public final class TweakedAdminScreen extends Screen {
 
     private void drawMinecraftButton(GuiGraphics guiGraphics, int left, int top, int right, int bottom) {
         guiGraphics.blitSprite(BUTTON_SPRITE, left, top, right - left, bottom - top);
+    }
+
+    private void drawResetButton(GuiGraphics guiGraphics, int panelLeft, int panelTop, int panelRight, int mouseX, int mouseY) {
+        ResetButton button = resetButtonBounds(panelLeft, panelTop, panelRight);
+        boolean hovered = contains(mouseX, mouseY, button.left(), button.top(), button.right(), button.bottom());
+        drawMinecraftButton(guiGraphics, button.left(), button.top(), button.right(), button.bottom());
+        if (hovered) {
+            drawBorder(guiGraphics, button.left(), button.top(), button.right(), button.bottom(), 0xFFFFFFFF);
+        }
+        guiGraphics.drawCenteredString(this.font, Component.translatable("menu.tweaked.default"), (button.left() + button.right()) / 2, button.top() + 6, 0xFFFFFF);
+    }
+
+    private void drawCategoryResetButton(GuiGraphics guiGraphics, int listRight, int top, int mouseX, int mouseY) {
+        ResetButton button = categoryResetButtonBounds(listRight, top);
+        boolean hovered = contains(mouseX, mouseY, button.left(), button.top(), button.right(), button.bottom());
+        drawMinecraftButton(guiGraphics, button.left(), button.top(), button.right(), button.bottom());
+        if (hovered) {
+            drawBorder(guiGraphics, button.left(), button.top(), button.right(), button.bottom(), 0xFFFFFFFF);
+        }
+        guiGraphics.blit(RESET_ICON, button.left() + 2, button.top() + 2, 0, 0.0F, 0.0F, 16, 16, 16, 16);
+    }
+
+    private boolean isCategoryResetButtonHovered(double mouseX, double mouseY, int listRight, int top) {
+        ResetButton button = categoryResetButtonBounds(listRight, top);
+        return contains(mouseX, mouseY, button.left(), button.top(), button.right(), button.bottom());
+    }
+
+    private ResetButton categoryResetButtonBounds(int listRight, int top) {
+        int right = listRight - 8;
+        return new ResetButton(right - CATEGORY_RESET_BUTTON_SIZE, top, right, top + CATEGORY_RESET_BUTTON_SIZE);
+    }
+
+    private ResetButton resetButtonBounds() {
+        int availableWidth = this.width - PANEL_MARGIN_X * 2 - PANEL_GAP;
+        int leftWidth = availableWidth / 3;
+        int panelLeft = PANEL_MARGIN_X + leftWidth + PANEL_GAP;
+        return resetButtonBounds(panelLeft, PANEL_MARGIN_Y, this.width - PANEL_MARGIN_X);
+    }
+
+    private ResetButton resetButtonBounds(int panelLeft, int panelTop, int panelRight) {
+        int right = panelRight - 18;
+        int left = Math.max(panelLeft + 18, right - RESET_BUTTON_WIDTH);
+        int top = panelTop + 6;
+        return new ResetButton(left, top, right, top + RESET_BUTTON_HEIGHT);
+    }
+
+    private void resetDisplayedGameRules() {
+        for (GameRuleDefinition definition : GAME_RULE_DEFINITIONS) {
+            if (definition.kind() == GameRuleKind.BOOLEAN) {
+                setBooleanRuleValue(definition.rule(), Boolean.parseBoolean(definition.defaultValue()));
+            } else {
+                setIntegerRuleValue(definition.rule(), Integer.parseInt(definition.defaultValue()));
+            }
+        }
+        this.focusedIntegerRule = null;
+    }
+
+    private void resetGameRuleCategory(String categoryKey) {
+        confirmCommand(
+                Component.translatable("menu.tweaked.gamerules.reset_category.confirm", Component.translatable(categoryKey)),
+                () -> applyGameRuleCategoryReset(categoryKey));
+    }
+
+    private void applyGameRuleCategoryReset(String categoryKey) {
+        for (GameRuleDefinition definition : gameRuleDefinitionsForCategory(categoryKey)) {
+            if (definition.kind() == GameRuleKind.BOOLEAN) {
+                boolean value = Boolean.parseBoolean(definition.defaultValue());
+                setBooleanRuleValue(definition.rule(), value);
+                sendCommand("gamerule " + definition.rule().getId() + " " + value);
+            } else {
+                int value = Integer.parseInt(definition.defaultValue());
+                setIntegerRuleValue(definition.rule(), value);
+                sendCommand("gamerule " + definition.rule().getId() + " " + value);
+            }
+        }
+        this.focusedIntegerRule = null;
+    }
+
+    private List<GameRuleDefinition> gameRuleDefinitionsForCategory(String categoryKey) {
+        if (MOB_GRIEFING_CATEGORY.equals(categoryKey)) {
+            return GAME_RULE_DEFINITIONS.stream()
+                    .filter(TweakedAdminScreen::isMobGriefingDefinition)
+                    .toList();
+        }
+
+        return GAME_RULE_DEFINITIONS.stream()
+                .filter(definition -> definition.category().getDescriptionId().equals(categoryKey))
+                .filter(definition -> !isMobGriefingDefinition(definition))
+                .toList();
+    }
+
+    private void resetMobSpawningNamespace(String namespace) {
+        String command = "tweaked spawning reset " + namespace;
+        confirmCommand(Component.translatable("menu.tweaked.spawning.reset_namespace.confirm", namespaceTitle(namespace)), () -> {
+            this.disabledMobSpawningTypes.removeIf(id -> id.getNamespace().equals(namespace));
+            sendCommand(command);
+        });
     }
 
     private void drawDropdownIndicator(GuiGraphics guiGraphics, int x, int y) {
@@ -1686,8 +1894,8 @@ public final class TweakedAdminScreen extends Screen {
 
         int actionY = layout.rowsTop;
         boolean hasPlayer = this.selectedPlayer != null;
-        addPlayerAction(Component.translatable("menu.tweaked.teleport_to"), actionX, actionY, hasPlayer, () -> sendCommand("tp " + selfName() + " " + this.selectedPlayer));
-        addPlayerAction(Component.translatable("menu.tweaked.teleport_here"), actionX + 104, actionY, hasPlayer, () -> sendCommand("tp " + this.selectedPlayer + " " + selfName()));
+        addPlayerAction(Component.translatable("menu.tweaked.teleport_to"), actionX, actionY, hasPlayer, () -> sendPlayerTeleport(this.selectedPlayer, GameRuleSync.PlayerTeleportMode.TO_TARGET));
+        addPlayerAction(Component.translatable("menu.tweaked.teleport_here"), actionX + 104, actionY, hasPlayer, () -> sendPlayerTeleport(this.selectedPlayer, GameRuleSync.PlayerTeleportMode.HERE));
         addPlayerAction(Component.literal("Heal"), actionX, actionY + 24, hasPlayer, () -> sendCommand("heal " + this.selectedPlayer));
         addPlayerAction(Component.literal("Feed"), actionX + 104, actionY + 24, hasPlayer, () -> sendCommand("feed " + this.selectedPlayer));
         addPlayerAction(Component.literal("Fly"), actionX, actionY + 48, hasPlayer, () -> sendCommand("fly " + this.selectedPlayer));
@@ -1811,6 +2019,22 @@ public final class TweakedAdminScreen extends Screen {
                 .toList();
     }
 
+    private void sendPlayerTeleport(String playerName, GameRuleSync.PlayerTeleportMode mode) {
+        if (this.minecraft == null || this.minecraft.getConnection() == null) {
+            return;
+        }
+
+        this.minecraft.getConnection().getOnlinePlayers().stream()
+                .map(PlayerInfo::getProfile)
+                .filter(profile -> profile.getName().equals(playerName))
+                .findFirst()
+                .ifPresent(profile -> sendPlayerTeleport(profile, mode));
+    }
+
+    private void sendPlayerTeleport(GameProfile profile, GameRuleSync.PlayerTeleportMode mode) {
+        PacketDistributor.sendToServer(new GameRuleSync.PlayerTeleportRequest(profile, mode));
+    }
+
     private List<GameProfile> visiblePlayerProfiles() {
         Set<UUID> onlinePlayerIds = onlinePlayerIds();
         return this.playerProfiles.stream()
@@ -1869,21 +2093,25 @@ public final class TweakedAdminScreen extends Screen {
     }
 
     private void confirmClearInventory() {
-        this.minecraft.setScreen(new ConfirmScreen(accepted -> {
-            if (accepted) {
-                sendCommand("clear " + this.selectedPlayer);
-            }
-            this.minecraft.setScreen(this);
-        }, Component.translatable("menu.tweaked.clear_inventory"), Component.translatable("menu.tweaked.clear_inventory.confirm", this.selectedPlayer)));
+        confirmClearInventory(this.selectedPlayer);
     }
 
-    private void confirmPlayerCommand(String playerName, String command) {
+    private void confirmClearInventory(String playerName) {
         this.minecraft.setScreen(new ConfirmScreen(accepted -> {
             if (accepted) {
-                sendCommand(command);
+                sendCommand("clear " + playerName);
             }
             this.minecraft.setScreen(this);
-        }, Component.literal("Submit"), Component.literal(command + " ?")));
+        }, Component.translatable("menu.tweaked.confirm.submit"), Component.translatable("menu.tweaked.clear_inventory.confirm", playerName)));
+    }
+
+    private void confirmCommand(Component prompt, Runnable onAccepted) {
+        this.minecraft.setScreen(new ConfirmScreen(accepted -> {
+            if (accepted) {
+                onAccepted.run();
+            }
+            this.minecraft.setScreen(this);
+        }, Component.translatable("menu.tweaked.confirm.submit"), prompt));
     }
 
     private void sendCommand(String command) {
@@ -1961,6 +2189,9 @@ public final class TweakedAdminScreen extends Screen {
             int scrollerHeight,
             int maxScroll
     ) {
+    }
+
+    private record ResetButton(int left, int top, int right, int bottom) {
     }
 
     private record Layout(

@@ -8,6 +8,7 @@ import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import com.mojang.brigadier.tree.CommandNode;
 import com.mojang.authlib.GameProfile;
 import com.mojang.logging.LogUtils;
+import de.maax.tweaked.TweakedConfig;
 import de.maax.tweaked.menu.InvSeeMenu;
 import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.advancements.AdvancementProgress;
@@ -15,7 +16,10 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.NonNullList;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.DoubleTag;
+import net.minecraft.nbt.FloatTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
@@ -24,6 +28,8 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.GameProfileArgument;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -88,7 +94,7 @@ public final class AdminCommands {
         CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
 
         dispatcher.register(Commands.literal("fly")
-                .requires(source -> source.hasPermission(2))
+                .requires(source -> source.hasPermission(2) && TweakedConfig.flyEnabled())
                 .executes(context -> setFly(context, self(context), null))
                 .then(Commands.argument("targets", EntityArgument.players())
                         .executes(context -> setFly(context, EntityArgument.getPlayers(context, "targets"), null))
@@ -96,7 +102,7 @@ public final class AdminCommands {
                                 .executes(context -> setFly(context, EntityArgument.getPlayers(context, "targets"), BoolArgumentType.getBool(context, "enabled"))))));
 
         dispatcher.register(Commands.literal("god")
-                .requires(source -> source.hasPermission(2))
+                .requires(source -> source.hasPermission(2) && TweakedConfig.godEnabled())
                 .executes(context -> setGod(context, self(context), null))
                 .then(Commands.argument("targets", EntityArgument.players())
                         .executes(context -> setGod(context, EntityArgument.getPlayers(context, "targets"), null))
@@ -104,34 +110,42 @@ public final class AdminCommands {
                                 .executes(context -> setGod(context, EntityArgument.getPlayers(context, "targets"), BoolArgumentType.getBool(context, "enabled"))))));
 
         dispatcher.register(Commands.literal("heal")
-                .requires(source -> source.hasPermission(2))
+                .requires(source -> source.hasPermission(2) && TweakedConfig.healEnabled())
                 .executes(context -> heal(context, self(context)))
                 .then(Commands.argument("targets", EntityArgument.players())
                         .executes(context -> heal(context, EntityArgument.getPlayers(context, "targets")))));
 
         dispatcher.register(Commands.literal("feed")
-                .requires(source -> source.hasPermission(2))
+                .requires(source -> source.hasPermission(2) && TweakedConfig.feedEnabled())
                 .executes(context -> feed(context, self(context)))
                 .then(Commands.argument("targets", EntityArgument.players())
                         .executes(context -> feed(context, EntityArgument.getPlayers(context, "targets")))));
 
         dispatcher.register(Commands.literal("invsee")
-                .requires(source -> source.hasPermission(2))
+                .requires(source -> source.hasPermission(2) && TweakedConfig.invSeeEnabled())
                 .executes(context -> openInventory(context, context.getSource().getPlayerOrException()))
                 .then(Commands.argument("target", GameProfileArgument.gameProfile())
                         .executes(context -> openInventory(context, singleProfile(context, "target")))));
 
         dispatcher.register(Commands.literal("endersee")
-                .requires(source -> source.hasPermission(2))
+                .requires(source -> source.hasPermission(2) && TweakedConfig.enderSeeEnabled())
                 .executes(context -> openEnderChest(context, context.getSource().getPlayerOrException()))
                 .then(Commands.argument("target", GameProfileArgument.gameProfile())
                         .executes(context -> openEnderChest(context, singleProfile(context, "target")))));
 
         dispatcher.register(Commands.literal("tweaked")
                 .requires(source -> source.hasPermission(2))
-                .then(Commands.literal("reset")
-                        .then(Commands.argument("target", GameProfileArgument.gameProfile())
-                                .executes(context -> resetPlayer(context, singleProfile(context, "target"))))));
+                .then(Commands.literal("gamerules")
+                        .then(Commands.literal("reset")
+                                .executes(AdminCommands::resetGameRules))));
+
+        dispatcher.register(Commands.literal("undo")
+                .requires(source -> source.hasPermission(2))
+                .executes(context -> FillHistory.undo(context.getSource())));
+
+        dispatcher.register(Commands.literal("redo")
+                .requires(source -> source.hasPermission(2))
+                .executes(context -> FillHistory.redo(context.getSource())));
 
         registerDimensionTeleportShortcuts(dispatcher);
     }
@@ -189,6 +203,13 @@ public final class AdminCommands {
 
     private static Collection<ServerPlayer> self(CommandContext<CommandSourceStack> context) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         return Set.of(context.getSource().getPlayerOrException());
+    }
+
+    private static int resetGameRules(CommandContext<CommandSourceStack> context) {
+        MinecraftServer server = context.getSource().getServer();
+        server.getGameRules().assignFrom(new net.minecraft.world.level.GameRules(), server);
+        sendSuccess(context.getSource(), "Reset game rules to defaults");
+        return 1;
     }
 
     private static GameProfile singleProfile(CommandContext<CommandSourceStack> context, String name) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
@@ -573,8 +594,128 @@ public final class AdminCommands {
         return 1;
     }
 
+    public static int teleportToPlayer(CommandSourceStack commandSource, GameProfile profile) throws CommandSyntaxException {
+        ServerPlayer source = commandSource.getPlayerOrException();
+        ServerPlayer target = onlinePlayer(commandSource, profile);
+        if (target != null) {
+            teleportPlayer(source, target.serverLevel(), target.position(), target.getYRot(), target.getXRot());
+            sendSuccess(commandSource, "Teleported to " + profile.getName());
+            return 1;
+        }
+
+        CompoundTag playerData = storedPlayerData(commandSource.getServer(), profile.getId());
+        ServerLevel targetLevel = storedPlayerLevel(commandSource.getServer(), playerData);
+        Vec3 targetPosition = storedPlayerPosition(playerData);
+        teleportPlayer(source, targetLevel, targetPosition, storedPlayerYaw(playerData), storedPlayerPitch(playerData));
+        sendSuccess(commandSource, "Teleported to " + profile.getName() + "'s last logout position");
+        return 1;
+    }
+
+    public static int teleportPlayerHere(CommandSourceStack commandSource, GameProfile profile) throws CommandSyntaxException {
+        ServerPlayer source = commandSource.getPlayerOrException();
+        ServerPlayer target = onlinePlayer(commandSource, profile);
+        if (target != null) {
+            teleportPlayer(target, source.serverLevel(), source.position(), source.getYRot(), source.getXRot());
+            sendSuccess(commandSource, "Teleported " + profile.getName() + " here");
+            return 1;
+        }
+
+        CompoundTag playerData = storedPlayerData(commandSource.getServer(), profile.getId());
+        writeStoredPlayerLocation(playerData, source);
+        saveStoredPlayerData(commandSource.getServer(), profile.getId(), playerData);
+        sendSuccess(commandSource, "Moved " + profile.getName() + "'s next login position here");
+        return 1;
+    }
+
+    private static void teleportPlayer(ServerPlayer player, ServerLevel targetLevel, Vec3 position, float yRot, float xRot) {
+        player.changeDimension(new DimensionTransition(
+                targetLevel,
+                position,
+                Vec3.ZERO,
+                yRot,
+                xRot,
+                DimensionTransition.DO_NOTHING
+        ));
+    }
+
     private static ServerPlayer onlinePlayer(CommandContext<CommandSourceStack> context, GameProfile profile) {
         return context.getSource().getServer().getPlayerList().getPlayer(profile.getId());
+    }
+
+    private static ServerPlayer onlinePlayer(CommandSourceStack source, GameProfile profile) {
+        return source.getServer().getPlayerList().getPlayer(profile.getId());
+    }
+
+    private static CompoundTag storedPlayerData(MinecraftServer server, UUID playerId) throws CommandSyntaxException {
+        Path path = playerDataPath(server, playerId);
+        if (!Files.isRegularFile(path)) {
+            throw ERROR_NO_STORED_PLAYER_DATA.create();
+        }
+
+        try {
+            return NbtIo.readCompressed(path, NbtAccounter.unlimitedHeap());
+        } catch (IOException exception) {
+            LOGGER.warn("Failed to read stored player data for {}", playerId, exception);
+            throw ERROR_NO_STORED_PLAYER_DATA.create();
+        }
+    }
+
+    private static ServerLevel storedPlayerLevel(MinecraftServer server, CompoundTag playerData) throws CommandSyntaxException {
+        ResourceLocation dimensionId = ResourceLocation.tryParse(playerData.getString("Dimension"));
+        if (dimensionId == null) {
+            throw ERROR_DIMENSION_NOT_FOUND.create();
+        }
+
+        ServerLevel level = server.getLevel(ResourceKey.create(Registries.DIMENSION, dimensionId));
+        if (level == null) {
+            throw ERROR_DIMENSION_NOT_FOUND.create();
+        }
+        return level;
+    }
+
+    private static Vec3 storedPlayerPosition(CompoundTag playerData) throws CommandSyntaxException {
+        ListTag position = playerData.getList("Pos", 6);
+        if (position.size() < 3) {
+            throw ERROR_NO_STORED_PLAYER_DATA.create();
+        }
+        return new Vec3(position.getDouble(0), position.getDouble(1), position.getDouble(2));
+    }
+
+    private static float storedPlayerYaw(CompoundTag playerData) {
+        ListTag rotation = playerData.getList("Rotation", 5);
+        return rotation.isEmpty() ? 0.0F : rotation.getFloat(0);
+    }
+
+    private static float storedPlayerPitch(CompoundTag playerData) {
+        ListTag rotation = playerData.getList("Rotation", 5);
+        return rotation.size() < 2 ? 0.0F : rotation.getFloat(1);
+    }
+
+    private static void writeStoredPlayerLocation(CompoundTag playerData, ServerPlayer source) {
+        ListTag position = new ListTag();
+        position.add(DoubleTag.valueOf(source.getX()));
+        position.add(DoubleTag.valueOf(source.getY()));
+        position.add(DoubleTag.valueOf(source.getZ()));
+        playerData.put("Pos", position);
+
+        ListTag rotation = new ListTag();
+        rotation.add(FloatTag.valueOf(source.getYRot()));
+        rotation.add(FloatTag.valueOf(source.getXRot()));
+        playerData.put("Rotation", rotation);
+        playerData.putString("Dimension", source.level().dimension().location().toString());
+    }
+
+    private static void saveStoredPlayerData(MinecraftServer server, UUID playerId, CompoundTag playerData) throws CommandSyntaxException {
+        try {
+            NbtIo.writeCompressed(playerData, playerDataPath(server, playerId));
+        } catch (IOException exception) {
+            LOGGER.warn("Failed to save stored player data for {}", playerId, exception);
+            throw ERROR_NO_STORED_PLAYER_DATA.create();
+        }
+    }
+
+    private static Path playerDataPath(MinecraftServer server, UUID playerId) {
+        return server.getWorldPath(LevelResource.PLAYER_DATA_DIR).resolve(playerId + ".dat");
     }
 
     private static void removeSpawnpointTags(CompoundTag tag) {
@@ -587,7 +728,7 @@ public final class AdminCommands {
     }
 
     private static void updateStoredPlayerData(MinecraftServer server, UUID playerId, java.util.function.Consumer<CompoundTag> updater) {
-        Path path = server.getWorldPath(LevelResource.PLAYER_DATA_DIR).resolve(playerId + ".dat");
+        Path path = playerDataPath(server, playerId);
         if (!Files.isRegularFile(path)) {
             return;
         }

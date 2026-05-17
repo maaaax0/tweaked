@@ -5,6 +5,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.allay.Allay;
 import net.minecraft.world.entity.monster.piglin.Piglin;
+import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Mixin;
@@ -26,6 +27,8 @@ public abstract class MobMixin {
             rule = TweakedGameRules.PIGLIN_GOLD_PICKUP;
         } else if (entity instanceof Allay) {
             rule = TweakedGameRules.ALLAY_ITEM_PICKUP;
+        } else if (entity instanceof Villager) {
+            rule = TweakedGameRules.VILLAGER_ITEM_PICKUP;
         }
 
         return level.getGameRules().getBoolean(rule);

@@ -1,6 +1,7 @@
 package de.maax.tweaked.world;
 
 import de.maax.tweaked.Tweaked;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import net.minecraft.core.HolderGetter;
@@ -11,11 +12,12 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.levelgen.FlatLevelSource;
 import net.minecraft.world.level.levelgen.flat.FlatLayerInfo;
 import net.minecraft.world.level.levelgen.flat.FlatLevelGeneratorSettings;
 import net.minecraft.world.level.levelgen.placement.PlacedFeature;
@@ -58,46 +60,27 @@ public final class SandboxPresets {
 
     public static void applyStartupWeatherAndTime(MinecraftServer server) {
         ServerLevel overworld = server.overworld();
-        if (!isSandboxLike(overworld) || !hasSandboxGameRules(overworld.getGameRules())) {
+        if (!hasSandboxGameRules(overworld.getGameRules())) {
             return;
         }
 
         overworld.setDayTime(6000L);
         overworld.setWeatherParameters(6000, 0, false, false);
+        discardExistingMobs(overworld);
     }
 
-    private static boolean isSandboxLike(ServerLevel level) {
-        if (!(level.getChunkSource().getGenerator() instanceof FlatLevelSource flatLevelSource)) {
-            return false;
-        }
-
-        List<FlatLayerInfo> layers = flatLevelSource.settings().getLayersInfo();
-        for (Preset preset : Preset.values()) {
-            if (matches(layers, preset)) {
-                return true;
+    private static void discardExistingMobs(ServerLevel level) {
+        List<Entity> mobs = new ArrayList<>();
+        for (Entity entity : level.getAllEntities()) {
+            if (entity instanceof Mob) {
+                mobs.add(entity);
             }
         }
 
-        return false;
+        mobs.forEach(Entity::discard);
     }
 
-    private static boolean matches(List<FlatLayerInfo> layers, Preset preset) {
-        if (layers.size() != preset.layers.size()) {
-            return false;
-        }
-
-        for (int i = 0; i < layers.size(); i++) {
-            FlatLayerInfo layer = layers.get(i);
-            Layer expected = preset.layers.get(i);
-            if (layer.getHeight() != expected.height || layer.getBlockState().getBlock() != expected.block) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static boolean hasSandboxGameRules(GameRules gameRules) {
+    public static boolean hasSandboxGameRules(GameRules gameRules) {
         return !gameRules.getBoolean(GameRules.RULE_DAYLIGHT)
             && !gameRules.getBoolean(GameRules.RULE_WEATHER_CYCLE)
             && !gameRules.getBoolean(GameRules.RULE_DOMOBSPAWNING)

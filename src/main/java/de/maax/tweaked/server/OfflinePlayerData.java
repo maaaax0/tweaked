@@ -6,6 +6,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Player;
@@ -36,6 +37,12 @@ public final class OfflinePlayerData {
     public static Container enderChest(Path playerDataDirectory, UUID playerId, HolderLookup.Provider registries) throws IOException {
         CompoundTag playerData = read(playerDataDirectory, playerId);
         return new EnderChestContainer(playerDataDirectory, playerId, registries, playerData);
+    }
+
+    public static void save(ServerPlayer player) throws IOException {
+        Path playerDataDirectory = player.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.PLAYER_DATA_DIR);
+        CompoundTag playerData = player.saveWithoutId(new CompoundTag());
+        write(playerDataDirectory, player.getUUID(), playerData);
     }
 
     private static CompoundTag read(Path playerDataDirectory, UUID playerId) throws IOException {

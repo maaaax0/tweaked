@@ -4,15 +4,28 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "BreakDoorGoalMixin",
+    "FillBiomeCommandMixin",
+    "FillCommandMixin",
+    "GameRuleCommandMixin",
+    "LevelMixin",
     "HarvestFarmlandMixin",
     "MobMixin",
+    "NaturalSpawnerMixin",
     "PitcherCropBlockMixin",
-    "SnifferMixin"
+    "SnifferMixin",
+    "TimeCommandMixin",
+    "WitherSkullBlockMixin"
   ],
   "client": [
+    "CategoryRuleEntryAccessor",
+    "CycleButtonAccessor",
+    "EditGameRulesRuleListMixin",
     "CreateWorldScreenAccessor",
+    "CreateWorldScreenGameTabMixin",
     "CreateWorldScreenMixin",
     "CreateWorldScreenWorldTabMixin",
+    "LevelLoadingScreenMixin",
+    "WorldCreationUiStateAccessor",
     "WorldCreationUiStateMixin"
   ],
   "injectors": {

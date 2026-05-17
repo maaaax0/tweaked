@@ -4,19 +4,20 @@ import de.maax.tweaked.world.SandboxPresets;
 import de.maax.tweaked.world.SandboxPresets.Preset;
 import de.maax.tweaked.world.SpawnOptions;
 import de.maax.tweaked.world.SpawnOptions.BiomeCategory;
-import de.maax.tweaked.world.TweakedGameRules;
+import java.util.Set;
+import java.util.Collections;
+import java.util.WeakHashMap;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 import net.minecraft.core.Holder;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.Difficulty;
-import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.levelgen.FlatLevelSource;
 
 public final class SandboxWorldTypeClient {
     private static Preset selectedPreset = Preset.NORMAL;
-    private static PreviousSettings previousSettings;
+    private static final WeakHashMap<WorldCreationUiState, Boolean> PREVIOUS_GENERATE_STRUCTURES = new WeakHashMap<>();
+    private static final Set<WorldCreationUiState> APPLYING_STRUCTURE_DEFAULTS = Collections.newSetFromMap(new WeakHashMap<>());
 
     private SandboxWorldTypeClient() {
     }
@@ -30,32 +31,29 @@ public final class SandboxWorldTypeClient {
             .isPresent();
     }
 
+    public static void resetSelectionState() {
+        selectedPreset = Preset.NORMAL;
+        PREVIOUS_GENERATE_STRUCTURES.clear();
+        APPLYING_STRUCTURE_DEFAULTS.clear();
+        SandboxGameModeClient.resetSelectionState();
+    }
+
     public static void applyDefaultsIfSandbox(WorldCreationUiState uiState) {
         if (!isSandboxSelected(uiState)) {
-            restorePreviousSettings(uiState);
+            restorePreviousStructures(uiState);
             return;
         }
 
-        if (previousSettings == null) {
-            previousSettings = PreviousSettings.capture(uiState);
+        PREVIOUS_GENERATE_STRUCTURES.putIfAbsent(uiState, uiState.isGenerateStructures());
+        selectedPreset = Preset.NORMAL;
+        SpawnOptions.setSelectedVillageSpawn(false);
+        APPLYING_STRUCTURE_DEFAULTS.add(uiState);
+        try {
+            uiState.setGenerateStructures(false);
+            applyPreset(uiState, selectedPreset);
+        } finally {
+            APPLYING_STRUCTURE_DEFAULTS.remove(uiState);
         }
-
-        selectedPreset = Preset.NORMAL;
-        uiState.setGameMode(WorldCreationUiState.SelectedGameMode.CREATIVE);
-        uiState.setAllowCommands(true);
-        uiState.setDifficulty(Difficulty.NORMAL);
-        uiState.setGenerateStructures(SpawnOptions.selectedVillageSpawn());
-        uiState.setGameRules(createSandboxGameRules(uiState.getGameRules()));
-        applyPreset(uiState, selectedPreset);
-    }
-
-    public static void resetSelectionState() {
-        previousSettings = null;
-        selectedPreset = Preset.NORMAL;
-    }
-
-    public static boolean preventSandboxStructures(WorldCreationUiState uiState, boolean generateStructures) {
-        return generateStructures && isSandboxSelected(uiState) && !SpawnOptions.selectedVillageSpawn();
     }
 
     public static void setVillageSpawn(WorldCreationUiState uiState, boolean villageSpawn) {
@@ -71,6 +69,19 @@ public final class SandboxWorldTypeClient {
 
             applyPreset(uiState, selectedPreset);
         }
+    }
+
+    public static void applyGenerateStructuresIfSandbox(WorldCreationUiState uiState) {
+        if (APPLYING_STRUCTURE_DEFAULTS.contains(uiState)) {
+            return;
+        }
+
+        if (!isSandboxSelected(uiState)) {
+            return;
+        }
+
+        SpawnOptions.setSelectedVillageSpawn(uiState.isGenerateStructures());
+        applyPreset(uiState, selectedPreset);
     }
 
     public static void setBiome(WorldCreationUiState uiState, BiomeCategory biome) {
@@ -110,59 +121,27 @@ public final class SandboxWorldTypeClient {
                 registryAccess,
                 preset,
                 SpawnOptions.selectedBiome(),
-                SpawnOptions.selectedVillageSpawn(),
+                uiState.isGenerateStructures(),
                 uiState.getSettings().options().seed()
             ))
         ));
     }
 
-    private static GameRules createSandboxGameRules(GameRules source) {
-        GameRules gameRules = source.copy();
-        gameRules.getRule(GameRules.RULE_DAYLIGHT).set(false, null);
-        gameRules.getRule(GameRules.RULE_WEATHER_CYCLE).set(false, null);
-        gameRules.getRule(GameRules.RULE_DOMOBSPAWNING).set(false, null);
-        gameRules.getRule(GameRules.RULE_DO_PATROL_SPAWNING).set(false, null);
-        gameRules.getRule(GameRules.RULE_DO_TRADER_SPAWNING).set(false, null);
-        gameRules.getRule(GameRules.RULE_DO_WARDEN_SPAWNING).set(false, null);
-        gameRules.getRule(GameRules.RULE_DISABLE_RAIDS).set(true, null);
-        gameRules.getRule(GameRules.RULE_MOBGRIEFING).set(true, null);
-        TweakedGameRules.ALL.forEach(rule -> gameRules.getRule(rule).set(true, null));
-        return gameRules;
-    }
-
-    private static void restorePreviousSettings(WorldCreationUiState uiState) {
-        if (previousSettings == null) {
+    private static void restorePreviousStructures(WorldCreationUiState uiState) {
+        Boolean previousGenerateStructures = PREVIOUS_GENERATE_STRUCTURES.remove(uiState);
+        if (previousGenerateStructures == null) {
             return;
         }
 
-        PreviousSettings settings = previousSettings;
-        previousSettings = null;
-        uiState.setGameMode(settings.gameMode);
-        uiState.setAllowCommands(settings.allowCommands);
-        uiState.setDifficulty(settings.difficulty);
-        uiState.setGenerateStructures(settings.generateStructures);
-        uiState.setGameRules(settings.gameRules.copy());
+        APPLYING_STRUCTURE_DEFAULTS.add(uiState);
+        try {
+            uiState.setGenerateStructures(previousGenerateStructures);
+        } finally {
+            APPLYING_STRUCTURE_DEFAULTS.remove(uiState);
+        }
     }
 
     private static Component displayName(Preset preset) {
         return Component.translatable("generator.tweaked.sandbox." + preset.id());
-    }
-
-    private record PreviousSettings(
-        WorldCreationUiState.SelectedGameMode gameMode,
-        boolean allowCommands,
-        Difficulty difficulty,
-        boolean generateStructures,
-        GameRules gameRules
-    ) {
-        private static PreviousSettings capture(WorldCreationUiState uiState) {
-            return new PreviousSettings(
-                uiState.getGameMode(),
-                uiState.isAllowCommands(),
-                uiState.getDifficulty(),
-                uiState.isGenerateStructures(),
-                uiState.getGameRules().copy()
-            );
-        }
     }
 }

@@ -1,9 +1,11 @@
 package de.maax.tweaked.network;
 
 import de.maax.tweaked.Tweaked;
+import de.maax.tweaked.server.AdminCommands;
 import de.maax.tweaked.server.SpawnControl;
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.yggdrasil.ProfileResult;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -49,6 +51,7 @@ public final class GameRuleSync {
         registrar.playToClient(SpawnControlSyncValues.TYPE, SpawnControlSyncValues.STREAM_CODEC, GameRuleSync::handleSpawnControlValues);
         registrar.playToServer(PlayerListSyncRequest.TYPE, PlayerListSyncRequest.STREAM_CODEC, GameRuleSync::handlePlayerListRequest);
         registrar.playToClient(PlayerListSyncValues.TYPE, PlayerListSyncValues.STREAM_CODEC, GameRuleSync::handlePlayerListValues);
+        registrar.playToServer(PlayerTeleportRequest.TYPE, PlayerTeleportRequest.STREAM_CODEC, GameRuleSync::handlePlayerTeleportRequest);
     }
 
     private static void handleRequest(GameRuleSyncRequest payload, IPayloadContext context) {
@@ -114,6 +117,25 @@ public final class GameRuleSync {
             method.invoke(null, payload);
         } catch (ReflectiveOperationException exception) {
             Tweaked.LOGGER.warn("Failed to apply player list sync payload", exception);
+        }
+    }
+
+    private static void handlePlayerTeleportRequest(PlayerTeleportRequest payload, IPayloadContext context) {
+        if (!(context.player() instanceof ServerPlayer player)
+                || !player.hasPermissions(2)) {
+            return;
+        }
+
+        try {
+            if (payload.mode() == PlayerTeleportMode.TO_TARGET) {
+                AdminCommands.teleportToPlayer(player.createCommandSourceStack(), payload.profile());
+            } else {
+                AdminCommands.teleportPlayerHere(player.createCommandSourceStack(), payload.profile());
+            }
+        } catch (CommandSyntaxException exception) {
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(exception.getMessage()));
+        } catch (RuntimeException exception) {
+            Tweaked.LOGGER.warn("Failed to run player teleport action for {}", payload.profile().getId(), exception);
         }
     }
 
@@ -246,6 +268,27 @@ public final class GameRuleSync {
                 ByteBufCodecs.GAME_PROFILE.apply(ByteBufCodecs.list()),
                 PlayerListSyncValues::profiles,
                 PlayerListSyncValues::new
+        );
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public enum PlayerTeleportMode {
+        TO_TARGET,
+        HERE
+    }
+
+    public record PlayerTeleportRequest(GameProfile profile, PlayerTeleportMode mode) implements CustomPacketPayload {
+        public static final Type<PlayerTeleportRequest> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(Tweaked.MOD_ID, "player_teleport_request"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, PlayerTeleportRequest> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.GAME_PROFILE,
+                PlayerTeleportRequest::profile,
+                ByteBufCodecs.VAR_INT.map(index -> PlayerTeleportMode.values()[index], PlayerTeleportMode::ordinal),
+                PlayerTeleportRequest::mode,
+                PlayerTeleportRequest::new
         );
 
         @Override
